@@ -2,6 +2,14 @@
 
 A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.6.
 
+**Free Chrome extension.** Compare clothing sizes, understand the reasons behind an estimate, and save what fits. Optional Anthropic API usage costs extra; local Ollama and a No AI measurement-comparison mode are also available.
+
+[Download the latest release](https://github.com/moritzlauper/forma/releases/latest) · [Installation instructions](#install)
+
+![FORMA clothing-fit assistant showing a size comparison and an explained estimate](docs/images/forma-teaser.png)
+
+*Promotional artwork adapted from the FORMA interface. Example estimates are illustrative, not measured fit probabilities. Interface details may differ by version.*
+
 ## Install
 
 Run `npm ci`, `npm run check`, `npm test`, and `npm run build`. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist`. After rebuilding, reload FORMA there and refresh connected shop tabs. Alternatively, extract the release ZIP and load its folder.

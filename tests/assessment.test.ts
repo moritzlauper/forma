@@ -1,10 +1,22 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {inputForReview,validateReview,requestReview} from '../src/assessment';
+import {inputForReview,validateReview,requestReview,reviewSchema} from '../src/assessment';
 import type {Profile,Product} from '../src/fit';
 const profile:Profile={mode:'body',name:'private name',category:'top',fit:'relaxed',measures:{chest:{value:100,uncertainty:12,estimated:true}}};
 const page={url:'https://example.test/products/hoodie?variant=1',name:'Box hoodie',text:'Heavyweight box fit hoodie',charts:[]};
 const product:Product={name:page.name,category:'top',measurementType:'garment',unit:'cm',flat:true,source:page.url,sizes:[{label:'M',available:true,measures:{chest:60}},{label:'L',available:true,measures:{chest:63}}]};
+test('Fit assessment requests schema-constrained JSON from both providers',async()=>{
+ const previous=globalThis.fetch;let local=false;
+ globalThis.fetch=async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));
+  if(local){assert.deepEqual(body.format,reviewSchema);assert.equal(body.options.num_predict,3000);}
+  else{assert.deepEqual(body.output_config.format,{type:'json_schema',schema:reviewSchema});assert.equal(body.max_tokens,3000);}
+  const text=JSON.stringify({size:null,summary:'Insufficient evidence',reasons:[],limitations:[]});
+  return new Response(JSON.stringify(local?{done_reason:'stop',message:{content:text}}:{stop_reason:'end_turn',content:[{type:'text',text}]}));
+ };
+ try{for(const mode of ['anthropic','ollama']){local=mode==='ollama';await requestReview(inputForReview(page,product,profile,[]),mode,'test-model','test-key');}}
+ finally{globalThis.fetch=previous;}
+});
 test('AI input contains garment context and uncertainty even when chart parsed locally',()=>{const input=inputForReview(page,product,profile,[]);assert.equal(input.product.parsed,product);assert.equal(input.profile.measures.chest?.estimated,true);assert.equal('name' in input.profile,false);});
 test('Only matching-product feedback enters assessment; URL variant does not split history',()=>{const input=inputForReview(page,product,profile,[{name:'other',url:'https://example.test/products/hoodie?variant=2',size:'L',value:'Too tight'},{name:'other',url:'https://example.test/products/other',size:'L',value:'Fits'}]);assert.equal(input.feedback.length,1);});
 test('Rejects invented sizes and direct feedback contradictions',()=>{const input=inputForReview(page,product,profile,[{name:page.name,size:'L',value:'Too tight'}]);const base={summary:'Test',reasons:[],limitations:[]};assert.throws(()=>validateReview({...base,size:'XL'},product,input));assert.throws(()=>validateReview({...base,size:'L'},product,input));assert.equal(validateReview({...base,size:null},product,input).size,null);});

@@ -13,5 +13,16 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   const send=()=>new Promise<any>(resolve=>listener(msg,{tab:{id:1},url:'https://example.test/hoodie'},resolve));
   const first=await send();assert.equal(calls,1);assert.equal(first.result.model,'claude-haiku-5-5');assert.equal(session['page:1'].assessment.status,'ready');assert.equal(local.aiCount,1);
   const repeated=await send();assert.equal(calls,1);assert.equal(local.aiCount,1);assert.equal(repeated.result.cached,true);
+  // A different product fails once. DOM updates must not spend more tokens;
+  // an explicit Refresh can retry, within the same request budget.
+  msg.name='Another hoodie';
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'max_tokens',content:[{type:'text',text:'{"summary":"unfinished'}]}));};
+  const broken=await send();assert.match(broken.result.message,/cut off/);assert.equal(calls,2);
+  await send();assert.equal(calls,2);assert.equal(session['page:1'].assessment.status,'error');
+  assert.equal(Object.keys(local.fitCache as object).length,1);
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({size:null,summary:'Complete assessment',reasons:[],limitations:[]})}]}));};
+  const retry=()=>new Promise<any>(resolve=>listener({...msg,retry:true},{tab:{id:1},url:'https://example.test/hoodie'},resolve));
+  const fixed=await retry();assert.equal(calls,3);assert.equal(local.aiCount,3);assert.equal(fixed.result.message,'Complete assessment');
+  await retry();assert.equal(calls,3);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

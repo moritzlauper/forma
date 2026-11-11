@@ -44,7 +44,7 @@ function App(){
   await chrome.scripting.registerContentScripts([{id,matches:origins,js:['content.js'],runAt:'document_idle'}]);
   await chrome.scripting.executeScript({target:{tabId:t.id!},files:['content.js']});N('Connected. FORMA now watches for product size charts automatically.');
  }
- async function rescan(){if(tab)await chrome.tabs.sendMessage(tab,{type:'refresh'});else throw Error('Connect a shop first.');}
+ async function rescan(){if(tab)await chrome.tabs.sendMessage(tab,{type:'refresh',retry:true});else throw Error('Connect a shop first.');}
  async function useProduct(p:Product){G(p);if(snapshot){const products=await store.get('products')||{};products[snapshot.url]={product:p,fingerprint:JSON.stringify([snapshot.name,snapshot.charts])};await store.set('products',products);await rescan();}}
  async function analyse(){
   if(!extension||mode==='none')throw Error('Choose an optional AI connection in settings first.');

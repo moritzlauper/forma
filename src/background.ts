@@ -2,6 +2,7 @@ import {recommend,validateProduct,type Profile,type Product} from './fit';
 import {detect,type Page} from './detect';
 import {inputForReview,requestReview,type Assessment,type Feedback} from './assessment';
 const flights=new Map<string,Promise<Assessment>>();
+const failed=new Set<string>();
 let budgetQueue=Promise.resolve();
 const revisions=new Map<number,number>();
 chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
@@ -31,7 +32,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[]);
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v2|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v3|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    if(msg.retry===true&&failed.delete(digest))flights.delete(digest);
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model}}});
     let job=flights.get(digest);const reused=!!job;
     if(!job){
@@ -49,7 +51,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
        latest[digest]=entry;await chrome.storage.local.set({fitCache:Object.fromEntries(Object.entries(latest).slice(-40))});
        return entry;
       }catch(e){return {status:'error',model,error:e instanceof Error?e.message:'AI assessment failed.'};}
-     })();
+     })().then(entry=>{if(entry.status==='error')failed.add(digest);return entry;});
      flights.set(digest,job);
      // Retain failed attempts in memory too: DOM updates must not trigger paid retries.
     }
@@ -71,6 +73,6 @@ chrome.permissions.onRemoved.addListener(async()=>{
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
  if(area!=='local'||!['profile','settings','apiKey','feedback'].some(k=>changes[k]))return;
- if(changes.apiKey||changes.settings)flights.clear();
+ if(changes.apiKey||changes.settings){flights.clear();failed.clear();}
  for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh'}).catch(()=>{});
 });

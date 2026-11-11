@@ -15,7 +15,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
  (async()=>{
   const page:Page={url:sender.url||'',name:String(msg.name).slice(0,200),text:String(msg.text).slice(0,16000),charts:Array.isArray(msg.charts)?msg.charts.slice(0,12).map((t:{text?:unknown;context?:unknown})=>({text:String(t.text||'').slice(0,8000),context:String(t.context||'').slice(0,10000)})):[]};
   page.images=Array.isArray(msg.images)?msg.images.filter((s:unknown)=>{if(typeof s!=='string')return false;try{const u=new URL(s);return u.protocol==='https:'&&!u.username&&!u.password&&!/^(localhost|127\.|192\.168\.|10\.)/.test(u.hostname);}catch{return false;}}).slice(0,2):[];
-  const data=await chrome.storage.local.get(['profile','products','settings','apiKey','feedback']);
+  const data=await chrome.storage.local.get(['profile','description','products','settings','apiKey','feedback']);
   const saved=(data.products as Record<string,{product:Product;fingerprint:string}>|undefined)?.[page.url];
   const fingerprint=JSON.stringify([page.name,page.charts]);
   const found=detect(page);
@@ -31,8 +31,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(mode==='anthropic'&&!key)assessment={status:'blocked',model,error:'Add your API key in Settings to start AI fit assessment.'};
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
-    const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[]);
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v4|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v5|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     if(msg.retry===true&&failed.delete(digest))flights.delete(digest);
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model}}});
     let job=flights.get(digest);const reused=!!job;
@@ -72,7 +72,7 @@ chrome.permissions.onRemoved.addListener(async()=>{
  for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
- if(area!=='local'||!['profile','settings','apiKey','feedback'].some(k=>changes[k]))return;
+ if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]))return;
  if(changes.apiKey||changes.settings){flights.clear();failed.clear();}
  for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh'}).catch(()=>{});
 });

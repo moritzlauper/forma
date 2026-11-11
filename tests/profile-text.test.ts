@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {understand} from '../src/profile-text';
+test('Centimetre waistband notes never become W size labels',()=>{for(const text of ['waist 46cm bei hosen sind mir gerade noch knapp okay','waist 46 cm','waist 46 centimetres','waist 46.5 cm','waist 146 cm','waist 46/48 cm'])assert.equal(understand(text).waistLabel,undefined,text);});
+test('Explicit usual size labels still work, even alongside measurements',()=>{assert.equal(understand('waist 33/34').waistLabel,'W33 / W34');assert.equal(understand('W33 / W34').waistLabel,'W33 / W34');assert.equal(understand('waist 46 cm is snug. Usual W34.').waistLabel,'W34');});
+test('Wide trouser legs do not become a preference for wider T-shirts',()=>{assert.deepEqual(understand('Hosen sind am Bein zu breit. Waist 46 cm knapp.').concerns,[]);});

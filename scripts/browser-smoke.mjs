@@ -156,6 +156,30 @@ try{
  await panel.getByLabel('Usual shoe size · EU').fill('45');
  await panel.getByLabel('Usual shoe size · EU').blur();
  await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
+ // Editing the existing notes field persists raw text, without one AI request per keystroke.
+ await shop.bringToFront();await panel.waitForTimeout(1000);
+ const beforeNotes=await worker.evaluate(()=>globalThis.testRequests);
+ const notes='waist 46cm bei hosen sind mir gerade noch knapp okay, lieber bisschen grösser, darunter lieber nicht. Beine bitte nicht noch weiter.';
+ await panel.getByLabel('Your fit, in your words').fill(notes.slice(0,40));
+ await panel.getByLabel('Your fit, in your words').fill(notes);
+ await panel.waitForFunction(async text=>(await chrome.storage.local.get('description')).description===text,notes);
+ await panel.waitForTimeout(1000);
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes,'Typing and autosaving notes uses no AI');
+ await panel.getByText('Optional: fill basic profile fields',{exact:true}).click();
+ await panel.getByRole('button',{name:'Find basic details',exact:true}).click();
+ await panel.getByText('No supported details found yet.',{exact:true}).waitFor();
+ assert.notEqual(await worker.evaluate(async()=>(await chrome.storage.local.get('profile')).profile.context.waistLabel),'W46');
+ await panel.getByRole('button',{name:'Use notes for this item',exact:true}).click();
+ await panel.getByText('AI ASSESSMENT · COMPLETED',{exact:true}).waitFor({timeout:15000});
+ assert.equal(await worker.evaluate(()=>globalThis.testInput.profile.description),notes);
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1);
+ await panel.reload();await shop.bringToFront();
+ await panel.getByRole('button',{name:/02.*Your profile/}).click();
+ await panel.waitForFunction(text=>document.querySelector('textarea')?.value===text,notes);
+ await panel.getByRole('button',{name:'Use notes for this item',exact:true}).click();
+ await panel.getByText('AI ASSESSMENT · CACHED',{exact:true}).waitFor({timeout:15000});
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1,'Unchanged notes reuse the assessment');
+ await panel.getByRole('button',{name:/02.*Your profile/}).click();
  assert.deepEqual(errors,[]);
  if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
  // Invalidate the real isolated extension while keeping its shop tab open.
@@ -165,5 +189,5 @@ try{
  for(let i=0;i<3;i++){await shop.evaluate(i=>document.querySelector('h1').textContent='Odessa Jeans '+i,i);await shop.waitForTimeout(700);}
  assert.equal(await shop.locator('#forma-fit-card').count(),0,'An invalidated reader disposes its popup');
  assert.deepEqual(shopErrors,[],'Reload must not leave uncaught context invalidation errors');
- console.log(JSON.stringify({result:'passed',reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
+ console.log(JSON.stringify({result:'passed',freeTextAutosavesWithoutAI:true,fullNotesReachAI:true,notesSurvivePanelReload:true,unchangedNotesReuseCache:true,reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

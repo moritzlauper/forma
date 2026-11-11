@@ -23,7 +23,7 @@ export function sizeEvidence(product:Product|null,profile:Profile,description:st
  if(!product&&!fitted.length&&!guide.sizes.length)blockers.push('No verified size measurements are available for comparison.');
  if(profile.mode==='reference'&&product&&(profile.category!==product.category||product.measurementType!=='garment'))blockers.push('The reference garment and product chart are not comparable.');
  const hasBodyContext=!!profile.context?.height&&!!profile.context?.weight;
- if(!measures[primary]&&!fitted.length&&!hasBodyContext&&!hasGoodFitExample&&!guide.matches.length)blockers.push('Add height and weight, a known measurement, or a tried size to personalise the estimate.');
+ if(!measures[primary]&&!fitted.length&&!hasBodyContext&&!hasGoodFitExample&&!guide.matches.length&&!description.trim())blockers.push('Add height and weight, a known measurement, or a tried size to personalise the estimate.');
  const eligibleSizes=product?.sizes.filter(s=>{
   if(feedback.some(f=>{
    if(!/too (tight|short|small)|zu (eng|kurz|klein)/i.test(f.value))return false;

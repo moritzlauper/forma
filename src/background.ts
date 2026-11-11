@@ -90,7 +90,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v15|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v16|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -131,7 +131,8 @@ chrome.permissions.onRemoved.addListener(async()=>{
  for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
- if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]&&JSON.stringify(changes[k].oldValue)!==JSON.stringify(changes[k].newValue)))return;
+ // Free-text notes autosave while typing; reassess only on the next scan or explicit apply.
+ if(area!=='local'||!['profile','settings','apiKey','feedback'].some(k=>changes[k]&&JSON.stringify(changes[k].oldValue)!==JSON.stringify(changes[k].newValue)))return;
  if(changes.apiKey){flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
  if(changes.settings){
   // Budget edits release blocked work, but must not duplicate running requests.

@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.3.1.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.4.
 
 ## Install
 
@@ -111,3 +111,11 @@ The content reader now uses a guarded callback transport, consumes Chrome runtim
 **Show popup** reopens the completed result from the panel without an AI request. Closing the popup still keeps it dismissed until explicitly reopened; Refresh requests a new assessment. After updating an unpacked extension, reload already-open shop pages once. Existing error entries in Chrome's extension manager are historical until cleared.
 
 Validation: 128 automated tests, TypeScript check, build and isolated Chromium extension tests. Personal preferences stated in chat are not automatically written into the user's Chrome profile.
+
+### 1.3.4 updates
+
+The existing **Your fit, in your words** field now autosaves the complete notes. Preferences, discomfort, measurements and exceptions reach the AI without first extracting basic fields. **Use notes for this item** applies them to the current product; unchanged input reuses its cached assessment. Typing and saving notes make no AI requests. Notes are included in profile exports and imports.
+
+Basic-field extraction is optional. Values such as `waist 46 cm` no longer become `W46`; explicit `W33/W34` labels remain supported. The assessment distinguishes waistband comfort from leg width and gives concrete personal tolerances priority over generic loose-fit assumptions. Free text does not become a verified body measurement.
+
+Validation: 132 automated tests, TypeScript and build checks, and isolated Chromium extension tests with stubbed AI responses. Notes persistence, complete AI input, no requests while typing, and cache reuse after panel reload are covered.

@@ -1,0 +1,12 @@
+import { build } from 'esbuild';
+import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
+import sharp from 'sharp';
+await mkdir('dist', {recursive:true});
+await build({entryPoints:['src/panel.tsx','src/background.ts','src/content.ts'],bundle:true,outdir:'dist',format:'iife',target:'chrome120',minify:true});
+for(const f of ['manifest.json','index.html','style.css']) await copyFile('public/'+f,'dist/'+f);
+const manifest=JSON.parse(await readFile('public/manifest.json','utf8'));
+manifest.version=JSON.parse(await readFile('package.json','utf8')).version;
+await writeFile('dist/manifest.json',JSON.stringify(manifest,null,2)+'\n');
+await copyFile('public/logo.svg','dist/logo.svg');
+await mkdir('dist/icons',{recursive:true});
+for(const size of [16,32,48,128]) await sharp('public/logo.svg').resize(size,size).png().toFile(`dist/icons/icon-${size}.png`);

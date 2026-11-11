@@ -1,7 +1,17 @@
 // Shared by the page collector and parser so transposed charts are not lost
 // before detection/AI sees them. No explicit "Size" heading is required.
 export const sizeLabel = /^(?:[2-6]?X{1,3}[SL]|[SML]|\d{2,3})$/i;
+export function sizeConversion(text:string){
+ const rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
+ const columns=rows[0]||[];
+ const systems=columns.filter(c=>/^(?:EU|EUR|INT|INTERNATIONAL|FR|IT|UK|US|JEANS)$/i.test(c));
+ if(systems.length<3||systems.length!==columns.filter(Boolean).length)return null;
+ const values=rows.slice(1).filter(row=>row.length===columns.length&&row.filter(Boolean).length>=3);
+ if(!values.length)return null;
+ return {kind:'size-conversion' as const,columns,rows:values.filter((r,i)=>values.findIndex(other=>JSON.stringify(other)===JSON.stringify(r))===i)};
+}
 export function isSizeChart(text:string):boolean {
+ if(sizeConversion(text))return true;
  const rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
  if(rows.length<2)return false;
  if(/size|grösse|größe/i.test(rows[0].join(' ')))return true;

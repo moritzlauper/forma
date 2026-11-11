@@ -19,8 +19,14 @@ try{
   globalThis.testRequests=0;
   globalThis.fetch=async(_url,options)=>{
    globalThis.testRequests++;
-   const body=JSON.parse(options.body);const input=JSON.parse(body.messages[0].content);
+   const body=JSON.parse(options.body);const content=body.messages[0].content;
+   const input=JSON.parse(Array.isArray(content)?content[0].text:content);
    globalThis.testInput=input;
+   if(input.product.name==='Denim Shorts'){
+    globalThis.shortsRequests=(globalThis.shortsRequests||0)+1;
+    if(input.product.images.length)return new Response(JSON.stringify({error:{type:'invalid_request_error',message:'Could not process image'}}),{status:400});
+    return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'No measurements read.',checks:{width:'No garment measurements.',length:'Knee length.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
+   }
    const sizes=input.product.parsed.sizes;
    return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34',summary:'Test assessment completed #'+globalThis.testRequests,checks:{width:'Flat waist width read.',length:'Generic garment length, not inseam.',sleeves:'Not applicable.'},ratings:sizes.map(s=>({size:s.label,width:s.label==='34'?90:60,length:s.label==='34'?85:60,style:70,sleeves:null,reason:'Synthetic test score.'})),reasons:[],limitations:['Synthetic test response.']})}]}));
   };
@@ -28,7 +34,9 @@ try{
  });
  const chart='<table><tr><td></td><td>32</td><td>34</td><td>36</td></tr><tr><td>WAIST ACROSS FRONT (CM)</td><td>43.5</td><td>46</td><td>48.5</td></tr><tr><td>LENGTH (CM)</td><td>110</td><td>112</td><td>114</td></tr></table>';
  const html=`<html><body><main><h1>Director Paint-Splattered Jeans</h1><button id="sizing" type="button">Sizing</button><div id="chart"></div><p>CHF 226</p><button>Add to cart</button></main><script>window.guideClicks=0;document.getElementById('sizing').onclick=()=>{window.guideClicks++;document.getElementById('chart').innerHTML=${JSON.stringify(chart)};};</script></body></html>`;
- await context.route('http://127.0.0.1:43119/**',route=>route.fulfill({contentType:'text/html',body:html}));
+ const conversion='<div role="dialog"><h2>Grössentabelle</h2><p>Grössen und Masse können je nach Brand variieren.</p><div><div><span>EU</span><span>INT</span><span>FR</span><span>IT</span><span>UK</span><span>JEANS</span></div><div><span>50</span><span>L</span><span>50</span><span>50</span><span>40</span><span>34</span></div></div></div>';
+ const shorts=`<html><head><meta property="og:image" content="https://images.example.test/shorts.jpg"></head><body><main><h1>Denim Shorts</h1><button type="button" aria-haspopup="dialog" id="guide">Grössenberater öffnen</button><p>Relaxed, knee length. CHF 30.</p><button>Add to cart</button></main><script>window.guideClicks=0;document.getElementById('guide').onclick=()=>{window.guideClicks++;document.body.insertAdjacentHTML('beforeend',${JSON.stringify(conversion)});};</script></body></html>`;
+ await context.route('http://127.0.0.1:43119/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:route.request().url().endsWith('/denim-shorts')?shorts:html}));
  const shop=await context.newPage();await shop.goto('http://127.0.0.1:43119/collections/trousers/products/director-jeans-grey');
  assert.equal(await shop.evaluate(()=>!!window.formaReader),false);
  const panel=await context.newPage();const errors=[];panel.on('pageerror',e=>errors.push(e.message));
@@ -64,7 +72,16 @@ try{
  for(let i=0;i<50;i++){if(await worker.evaluate(()=>globalThis.testInput?.product.parsed?.source.endsWith('/another-jeans')))break;await new Promise(resolve=>setTimeout(resolve,100));}
  const learned=await worker.evaluate(()=>globalThis.testInput);
  assert.ok(learned.product.parsed.source.endsWith('/another-jeans'));assert.equal(learned.profile.goodFits[0].size,'34');assert.equal(learned.profile.goodFits[0].reason,'Good full length and roomy legs.');assert.equal(learned.profile.goodFits[0].measurements.values.waist,46);
+ await worker.evaluate(async()=>{const data=await chrome.storage.local.get('goodFits');await chrome.storage.local.set({goodFits:[...data.goodFits,{url:'http://127.0.0.1:43119/products/denim-shorts',name:'Denim Shorts',category:'trousers',product:null,size:'L',reason:'Fits well.',savedAt:1}]});});
+ await shop.goto('http://127.0.0.1:43119/products/denim-shorts');await shop.bringToFront();
+ await panel.getByRole('heading',{name:'Your recorded fit: L',exact:true}).waitFor({timeout:15000});
+ await panel.getByText('No product photos assessed. Visual cut and hem details may be unknown.',{exact:true}).waitFor();
+ await panel.getByText('The AI service could not process the product photos. This assessment used text and sizing only.',{exact:true}).waitFor();
+ const shortsInput=await worker.evaluate(()=>globalThis.testInput);
+ assert.equal(shortsInput.product.parsed,null);assert.equal(shortsInput.product.conversions.length,1);assert.equal(shortsInput.product.conversions[0].rows[0][1],'L');
+ assert.equal(await shop.evaluate(()=>window.guideClicks),1);assert.equal(await worker.evaluate(()=>globalThis.shortsRequests),2);
+ assert.equal(await worker.evaluate(async()=> (await chrome.storage.local.get('aiCount')).aiCount),await worker.evaluate(()=>globalThis.testRequests));
  assert.deepEqual(errors,[]);
  if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
- console.log(JSON.stringify({result:'passed',automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,oneClickBookmark:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,panelErrors:errors}));
+ console.log(JSON.stringify({result:'passed',automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,oneClickBookmark:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

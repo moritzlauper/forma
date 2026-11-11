@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.2.0.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.2.1.
 
 ## Install
 
@@ -16,7 +16,7 @@ Clothing product pages are recognised locally from product metadata, clothing na
 
 If a page is missed, choose **Analyse this page**. This requests access to that shop if needed and bypasses classification for the current page. It uses the same chart discovery, AI, cache and budget as automatic analysis. Refresh retains manual activation; navigation clears it. It does not guarantee that missing measurements can be recovered.
 
-FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. FORMA never selects sizes or modifies the cart.
+FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. German controls such as “Grössenberater öffnen” and “Größentabelle anzeigen”, nested disclosures and dialog tables (including consistent CSS grids) are supported. Size-conversion tables such as EU / INT / UK / JEANS are passed to the assessment as label mappings, never centimetres. FORMA never selects sizes or modifies the cart.
 
 Opening the panel reconnects to the active, already-permitted shop and starts a missing reader, including in tabs left open across extension updates. Missing website access, scan failures and interrupted assessments have explicit statuses instead of an indefinite “Waiting for AI”. **Refresh** reconnects, rereads sizing and requests a fresh AI assessment, bypassing a completed cached answer. Repeated clicks during an active request share that request; automatic scans still use the cache.
 
@@ -42,6 +42,8 @@ Use **Record actual fit** to record the size you tried. That experience takes pr
 
 Future assessments receive up to six relevant saved examples, including product descriptions and your reasons. Confirmed sizes with garment charts also provide comparable dimensions, with their original units and flat-width convention. An unsized bookmark teaches preferences without inventing a measurement anchor. Examples are selected by clothing category, prioritising the same type; the AI is instructed to distinguish T-shirt/hoodie lengths and trouser length methods. This is personalisation from saved examples, not model retraining or guaranteed cross-brand fit. Up to 50 items are stored locally; existing profile-only exports do not include this collection.
 
+For the exact same saved product, an uncontradicted worn size is labelled **Your recorded fit**, even without chart measurements. This acknowledges your experience; it does not fabricate dimensions or a score and does not transfer that label to other products. The saved-item editor distinguishes recorded sizes from saved chart measurements.
+
 Optional measurements and manual charts remain available. Use semicolon/tab-separated columns such as `Size;Chest;Sleeve;Length`. Explicitly specify body/garment measurements, units and full/half circumferences. Reference garments need compatible measurement protocols.
 
 ## Cost and privacy
@@ -60,15 +62,15 @@ The tabs permission lets the panel identify the active shop URL. Page content re
 
 ## Supported detection and limitations
 
-Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. “Waist across front” is recognised as a flat garment width. Generic trouser LENGTH remains garment length, never an invented inseam; it can support a relative coverage score with uncertain measurement endpoints. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
+Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. “Waist across front” is recognised as a flat garment width. Generic trouser LENGTH remains garment length, never an invented inseam; it can support a relative coverage score with uncertain measurement endpoints. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. If the provider explicitly rejects an image with HTTP 400, FORMA makes one budgeted retry without photos. The panel states that no photos were assessed. Other API errors display the provider reason with credentials and URLs removed.
 
 Size-guide discovery supports recognised in-page tabs, buttons and disclosures; it does not navigate to separate guide pages. General screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
 
 ## Verification
 
-91 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
+97 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
 
-The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
+The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
 
 ## References
 

@@ -1,5 +1,5 @@
 import {parseTable,type Category,type Product} from './fit';
-import {sizeLabel} from './chart-shape';
+import {sizeLabel,sizeConversion} from './chart-shape';
 import {clothingCategory,type PageDetection} from './product-page';
 export type Chart={text:string;context:string};
 export type Page={url:string;name:string;text:string;charts:Chart[];images?:string[];detection?:PageDetection;manual?:boolean};
@@ -8,6 +8,7 @@ export function detect(page:Page):{product:Product|null;reason:string}{
  if(!category)return {product:null,reason:'Product category not clear yet.'};
  const candidates:Product[]=[];let reason='FORMA could not read a size chart after checking this page’s size guide.';
  for(const chart of page.charts){
+  if(sizeConversion(chart.text)){reason='Size conversion chart found. It maps size labels, but contains no body or garment measurements.';continue;}
   const context=(chart.text+'\n'+chart.context).toLowerCase();const unit=/\bcm\b|centimet/.test(context)?'cm':/\binches\b|\binch\b|\bzoll\b/.test(context)?'in':null;
   if(!unit){reason='The chart does not specify cm or inches.';continue;}
   if((/\bcm\b|centimet/.test(context))&&/\binches\b|\binch\b|\bzoll\b/.test(context)){reason='This chart mixes units. Select one unit in the shop.';continue;}

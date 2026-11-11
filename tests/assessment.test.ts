@@ -24,3 +24,24 @@ test('A parsed table still makes a real transport call for AI fit assessment',as
 test('HTTP failures remain errors instead of local recommendations',async()=>{const previous=globalThis.fetch;globalThis.fetch=async()=>new Response('',{status:401});try{await assert.rejects(requestReview(inputForReview(page,product,profile,[]),'anthropic','claude-haiku-5-5','test-key'),/401/);}finally{globalThis.fetch=previous;}});
 test('General comparison rejects any narrower size after a too-tight report',()=>{const input=inputForReview(page,product,profile,[{name:page.name,size:'L',value:'Too tight'}]);assert.throws(()=>validateReview({size:'M',summary:'Test',reasons:[],limitations:[]},product,input),/no larger/);});
 test('Anthropic receives product photos as image blocks rather than URL text',async()=>{const previous=globalThis.fetch;globalThis.fetch=async(_url,init)=>{const body=JSON.parse(String(init?.body));assert.equal(body.messages[0].content[1].type,'image');assert.equal(body.messages[0].content[1].source.url,'https://example.test/hoodie.jpg');return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Cannot determine size from silhouette',reasons:['Hem looks tapered'],limitations:['Photo provides no exact measurements']})}]}));};try{await requestReview(inputForReview({...page,images:['https://example.test/hoodie.jpg']},product,profile,[]),'anthropic','claude-haiku-5-5','test-key');}finally{globalThis.fetch=previous;}});
+test('Rejected product images get one budgeted text-only attempt with honest image metadata',async()=>{
+ const previous=globalThis.fetch;let calls=0,reservations=0;
+ globalThis.fetch=async(_url,init)=>{
+  calls++;const body=JSON.parse(String(init?.body));
+  if(calls===1){assert.equal(body.messages[0].content[1].type,'image');return new Response(JSON.stringify({error:{type:'invalid_request_error',message:'Could not process image'}}),{status:400});}
+  assert.equal(typeof body.messages[0].content,'string');assert.deepEqual(JSON.parse(body.messages[0].content).product.images,[]);
+  return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Text-only assessment',reasons:[],limitations:[]})}]}));
+ };
+ try{const review=await requestReview(inputForReview({...page,images:['https://shop.test/photo.jpg']},product,profile,[]),'anthropic','test','fake-key',async()=>{reservations++;return true;});assert.equal(calls,2);assert.equal(reservations,1);assert.equal(review.imageCount,0);assert.match(review.limitations.join(' '),/text and sizing only/);}finally{globalThis.fetch=previous;}
+});
+test('Non-image HTTP 400 shows the provider reason with secrets removed and does not retry',async()=>{
+ const previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({error:{message:'Invalid model parameter. fake-secret https://private.test/photo?token=secret'}}),{status:400});};
+ try{await assert.rejects(requestReview(inputForReview({...page,images:['https://shop.test/photo.jpg']},product,profile,[]),'anthropic','test','fake-secret'),e=>{assert.match(String(e),/Invalid model parameter/);assert.doesNotMatch(String(e),/fake-secret|private.test|token=secret/);return true;});assert.equal(calls,1);}finally{globalThis.fetch=previous;}
+});
+test('Photo recovery respects the request limit and never loops on a second failure',async()=>{
+ const previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({error:{message:'Could not process image'}}),{status:400});};
+ const input=inputForReview({...page,images:['https://shop.test/photo.jpg']},product,profile,[]);
+ try{await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>false),/limit prevents/);assert.equal(calls,1);calls=0;await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>true),/Could not process image/);assert.equal(calls,2);}finally{globalThis.fetch=previous;}
+});

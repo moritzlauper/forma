@@ -10,11 +10,19 @@ import {isSizeChart} from './chart-shape';
     context:(t.closest('dialog,[role="dialog"],section')?.textContent||t.parentElement?.textContent||t.textContent||'').slice(0,10000)
   })).filter(t=>isSizeChart(t.text));
   const name=document.querySelector('h1')?.textContent?.trim()||document.title;
-  const url=location.href;const signature=JSON.stringify([url,name,charts]);if(signature===last)return;last=signature;const id=++seq;host.remove();
+  const images:string[]=[];
+  const addImage=(raw:unknown)=>{if(typeof raw!=='string')return;try{const u=new URL(raw,location.href);if(/^https?:$/.test(u.protocol)&&!u.username&&!u.password&&!images.includes(u.href))images.push(u.href);}catch{}};
+  // Product-specific structured data first; social preview as a fallback.
+  for(const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))){try{const walk=(value:any,depth=0)=>{if(depth>8||!value||typeof value!=='object')return;if(value['@type']==='Product'||Array.isArray(value['@type'])&&value['@type'].includes('Product'))for(const item of [value.image].flat())addImage(typeof item==='string'?item:item?.url);if(Array.isArray(value))value.forEach(v=>walk(v,depth+1));else if(value['@graph'])walk(value['@graph'],depth+1);};walk(JSON.parse(script.textContent||''));}catch{}}
+  if(!images.length)addImage(document.querySelector('meta[property="og:image"]')?.getAttribute('content'));
+  const photos=images.slice(0,2);
+  const url=location.href;const signature=JSON.stringify([url,name,charts,photos]);if(signature===last)return;last=signature;const id=++seq;host.remove();
   if(!charts.length&&!document.querySelector('[itemtype*="Product"],form[action*="cart"],button[name="add"]')&&!Array.from(document.querySelectorAll('script[type="application/ld+json"]')).some(s=>/"@type"\s*:\s*"Product"/.test(s.textContent||'')))return;
   const description=(document.querySelector('main')||document.body).innerText.slice(0,12000);
-  try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,text:description});if(id!==seq||url!==location.href||!answer.result)return;
+  try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,images:photos,text:description});if(id!==seq||url!==location.href||!answer.result)return;
    card.replaceChildren();const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=answer.result.message;card.append(b,p);
+   if(answer.result.model){const source=document.createElement('small');source.textContent=answer.result.model+(answer.result.cached?' · cached':'');card.append(source);}
+   if(answer.result.reasons?.length){const reasons=document.createElement('small');reasons.textContent=answer.result.reasons.slice(0,3).join(' · ');card.append(reasons);}
    const row=answer.result.ranked?.[0];if(row){const small=document.createElement('small');small.textContent=row.details.map((d:{key:string;text:string})=>d.key+': '+d.text).join(' · ')+(row.available?'':' · sold out');card.append(small);}
    document.body.append(host);
   }catch{/* extension reloaded */}

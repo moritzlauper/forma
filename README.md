@@ -1,50 +1,46 @@
 # FORMA · Your fit
 
-A local Chrome extension for explainable clothing-fit comparisons. English interface; simple English and German profile descriptions are recognised locally. Version 0.1.1.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 0.2.0 preview.
 
 ## Install
 
-Run `npm install`, `npm run check`, `npm test`, and `npm run build`. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist`. After rebuilding, reload FORMA there and refresh connected shop tabs.
+Run `npm ci`, `npm run check`, `npm test`, and `npm run build`. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist`. After rebuilding, reload FORMA there and refresh connected shop tabs. Alternatively, extract the release ZIP and load its folder.
 
-New installations start with an empty profile. Existing profiles stay in the browser. Missing body dimensions receive broad, unvalidated starting estimates only after height and weight are provided. These are marked as estimated and produce tentative recommendations. Manual and locked values take precedence.
+New installations start with an empty profile. Existing profiles and saved API keys stay in the browser when updating the same installation. Missing body dimensions receive broad, unvalidated starting estimates after height and weight are provided. Manual and locked values take precedence. Estimates alone no longer produce a local size recommendation.
 
 ## Everyday use
 
-Connect a shop once, or explicitly enable all-site access in Settings. On supported product pages, FORMA watches visible HTML size charts and automatically compares readable measurements with the saved profile. If a chart is inside a dialog, open the shop's size guide; FORMA detects it when it appears. It never selects sizes or modifies the cart.
+Describe your fit preferences, add your API key and allow the AI connection in Settings. Connect a shop once, or explicitly enable all-site access. On supported product pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart. Open the shop's size guide if it is hidden in a dialog. FORMA never selects sizes or modifies the cart.
 
-The normal view shows a candidate and per-dimension reasons. Missing measurements and ambiguous charts produce an explanation instead of a fabricated size. Height and weight alone do not establish exact chest fit or sleeve length; automatic estimates display wide uncertainty ranges. A usual waist size is kept as a label, not treated as a measured waist.
+The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data or the social preview image are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
 
-Your profile starts with a natural-language description. Optional measurements are collapsed underneath. A favourite garment's original measurements can avoid measuring your body. Enter reference circumferences in full; use the same sleeve/length measuring protocol as the product.
+The panel shows the model, completion/cache status, image inclusion, reasons and limitations. Missing credentials, permission, exhausted request limits and API errors are shown explicitly. AI failures do not silently fall back to a local size suggestion. The AI can return no reliable size when evidence is insufficient.
 
-Manual tables and optional AI are under **Chart not detected? Advanced fallback**. Use semicolon/tab-separated columns such as `Size;Chest;Sleeve;Length`. Explicitly specify body/garment measurements, units and full/half circumferences when entering a chart manually.
+Use **Record actual fit** to record the size you tried. That experience takes priority for the same product. No specific product, brand, user measurement or size outcome is baked into the defaults. Cross-brand learning is not implemented.
+
+Optional measurements and manual charts remain available. Use semicolon/tab-separated columns such as `Size;Chest;Sleeve;Length`. Explicitly specify body/garment measurements, units and full/half circumferences. Reference garments need compatible measurement protocols.
 
 ## Cost and privacy
 
-Normal page detection, profile parsing, chart extraction and fit comparison use no AI calls. Profile edits recalculate locally.
+Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, up to two product photo URLs, profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
 
-With an AI provider enabled and its connection allowed, unreadable detected charts automatically trigger one cached analysis. Ordinary pages and profile edits do not trigger AI. A manual fallback is also available. The cache keys parser version, provider, model and input text, retaining 40 analyses. A request limit counts attempted calls, including failures; it is not a monetary budget. No automatic paid retries.
+Keys are remembered in trusted extension-local storage on this device and excluded from profile exports. Browser storage is not an encrypted password vault. Settings includes **Forget API key**. No key is embedded in page scripts or source.
 
-Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. Enter your own API key and allow the connection. Only product text is sent; profile measurements remain local. Keys are remembered in trusted extension-local storage on this device and excluded from profile exports. Browser storage is not an encrypted password vault. Settings includes Forget API key. No key is embedded in page scripts or source.
+Detection and parsing are local. Identical assessment inputs are cached locally, retaining 40 results. Concurrent identical assessments share a request. Profile, feedback or product changes may require a new paid assessment. The request limit counts attempts, including failures; it is not a monetary budget. Failed automatic requests are not retried on every page mutation during the worker session. Reloading the worker or changing settings can allow another attempt.
 
-Ollama uses `http://localhost:11434` and a locally installed model. Configure `OLLAMA_ORIGINS` for your extension's exact `chrome-extension://ID` origin and restart Ollama. Local inference has no API fees but needs hardware and electricity. No external AI service has been live-tested as part of this build.
+Choose **No AI** for free local comparison using reliable measurements. Ollama uses a locally installed text model at `http://localhost:11434`; product photos are not attached in this mode. Configure `OLLAMA_ORIGINS` for your exact `chrome-extension://ID` origin and restart Ollama. Local inference needs suitable hardware and electricity.
 
-The tabs permission lets the panel identify the active shop URL before requesting its host permission. Page contents still require host permission.
-
-Chrome local and session storage are restricted to trusted extension contexts. Export/import moves your profile between computers without including API keys.
+The tabs permission lets the panel identify the active shop URL. Page content requires host permission. Chrome local/session storage is restricted to trusted extension contexts. Profile export/import excludes API keys. Automatic AI assessment runs in the background worker, independently of whether the panel is open.
 
 ## Supported detection and limitations
 
-Detection currently covers visible HTML/ARIA tables with explicit units and clear body measurements, or explicit garment circumferences/flat widths. It handles common English/German column names and some transposed layouts. Conflicting charts and mixed units are rejected. Unknown sleeve measuring protocols are excluded. Dynamic page/chart changes clear the old card and trigger a fresh comparison.
+Local detection covers visible HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
 
-There are no verified named-shop adapters yet. Image charts/OCR, automatic size-guide clicking and calibrated 3D try-on are not implemented. An older schematic avatar module remains available in source but is not part of the normal profile screen. It is not an anthropometric model.
-
-Body comparisons use provisional ease allowances. Stretch, fabric drape, raglan sleeves and dropped shoulders are not simulated. Reference comparisons need the same category and measurement protocol. Shoes require manufacturer body charts with foot measurements. Bras, children's sizes and specialist garments need separate rules and are not supported.
-
-Feedback is recorded per product/size; no automatic cross-brand sizing inference is made. A running AI call ends when the panel closes; restarting is manual.
+Automatic size-guide clicking, general screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
 
 ## Verification
 
-`npm test`: unit conversion, flat widths, missing/conflicting values, sold-out sizes, separate length/width results, profile parsing and automatic chart detection. TypeScript and production build checks also pass. Live Chrome shop flows still need end-to-end testing.
+30 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
 
 ## References
 
@@ -52,4 +48,4 @@ Feedback is recorded per product/size; no automatic cross-brand sizing inference
 - [Optional permissions](https://developer.chrome.com/docs/extensions/reference/api/permissions)
 - [Chrome Storage](https://developer.chrome.com/docs/extensions/reference/api/storage)
 - [Ollama Chat](https://docs.ollama.com/api/chat)
-- [Claude Haiku 5.5](https://www.anthropic.com/claude-haiku-5-5)
+- [Claude vision input](https://platform.claude.com/docs/en/build-with-claude/vision)

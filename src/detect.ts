@@ -1,7 +1,7 @@
 import {parseTable,type Category,type Product} from './fit';
 import {sizeLabel} from './chart-shape';
 export type Chart={text:string;context:string};
-export type Page={url:string;name:string;text:string;charts:Chart[]};
+export type Page={url:string;name:string;text:string;charts:Chart[];images?:string[]};
 export function detect(page:Page):{product:Product|null;reason:string}{
  const name=page.name.toLowerCase();
  const category:Category|null=/hoodie|t-shirt|shirt|sweater|pullover|tee|hemd/.test(name)?'top':/jacket|coat|jacke|mantel/.test(name)?'jacket':/jeans|trousers|pants|hose|shorts/.test(name)?'trousers':/dress|overall|kleid|jumpsuit/.test(name)?'dress':/shoes|sneaker|boots|schuhe/.test(name)?'shoes':null;

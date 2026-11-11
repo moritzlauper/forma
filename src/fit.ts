@@ -38,6 +38,7 @@ export function recommend(profile:Profile,product:Product){
   return {label:s.label,available:s.available,details,score:details.reduce((sum,d)=>{const concern=profile.context?.concerns||[];const extra=(d.delta<0&&d.key==='sleeve'&&concern.includes('Sleeves often too short'))||(d.delta<0&&d.key==='inseam'&&concern.includes('Avoid short trousers'))||(d.delta>0&&d.key==='length'&&product.category==='top'&&concern.includes('T-shirts often too long'));return sum+Math.abs(d.delta)*(d.key===primary?2:1)*(extra?2:1);},0)};
  }).sort((a,b)=>a.score-b.score);
  const guessed=comparisons.some(k=>profile.measures[k]!.estimated);
+ if(guessed)return {...base,quality:'rough estimate',message:'Estimated body measurements are too uncertain to select a size locally. Use AI assessment or add reliable garment/body measurements.'};
  const good=!missing.length&&comparisons.every(k=>profile.measures[k]!.uncertainty<=1);
  const anyFit=rows.some(r=>!r.details.some(d=>d.bad));
  return {...base,ranked:rows,quality:guessed?'rough estimate':good?'good':comparisons.length>1?'limited':'weak',message:guessed?`${rows[0].label} is a tentative starting point, based on estimated measurements.`:anyFit?`${rows[0].label} is the closest comparison.`:'No size meets all checked targets.'};

@@ -17,9 +17,7 @@ export type OverallFit={label:typeof fitLabels[number];reason:string;score?:numb
 export function overallFit(review:{size?:string|null;basis?:string;overallFit?:OverallFit;ranked?:{size:string;overall:number|null;eligible:boolean;reason:string}[]}):OverallFit{
  if(review.overallFit)return review.overallFit;
  if(review.basis==='tried'&&review.size)return {label:'Confirmed good fit',reason:'Based on your own experience with this item.'};
- const selected=review.ranked?.find(s=>s.size===review.size);
- if(selected)return {label:fitRating(selected.overall,selected.eligible) as OverallFit['label'],reason:selected.reason};
- return {label:review.ranked?.some(s=>s.overall!==null||!s.eligible)?'Not recommended':'Not enough data',reason:review.size?'Size estimate only; overall fit has not been assessed.':'No suitable size has been established for this item.'};
+ return {label:'Not enough data',reason:'Cut and proportions have not been assessed independently of size.'};
 }
 
 /** Display the existing estimate on a ten-point scale, without inventing missing scores. */
@@ -29,10 +27,6 @@ export function fitScore(score:number|null|undefined,eligible=true):string {
  return (Math.max(0,Math.min(100,score))/10).toFixed(1)+'/10';
 }
 export function overallScore(review:Parameters<typeof overallFit>[0]):string {
- const selected=review.ranked?.find(s=>s.size===review.size);
- const best=selected||review.ranked?.find(s=>s.eligible&&s.overall!==null);
- if(review.ranked?.length&&!best)return 'Not recommended';
- if(review.overallFit?.score!=null)return fitScore(Math.min(review.overallFit.score*10,best?.overall??100));
- if(best)return fitScore(best.overall,best.eligible);
+ if(review.overallFit?.score!=null)return fitScore(review.overallFit.score*10);
  return review.basis==='tried'?'Confirmed by you':'Not enough data';
 }

@@ -74,7 +74,7 @@ test('Repeated truncation stops and a denied retry budget makes no extra request
 test('A poor overall garment match cannot recommend the only available size',()=>{
  const one={...product,sizes:[{...product.sizes[0],measures:{...product.sizes[0].measures,length:66}}]};const input=inputForReview(page,one,profile,[],'Loose fit, adequate coverage.');
  const review=validateReview({size:one.sizes[0].label,summary:'Only size',overallFit:{label:'Poor fit',reason:'The cut is too short for your desired coverage.'},checks:{width:'Roomy',length:'Too short',sleeves:'Unknown'},ratings:input.decision.scoring.sizes.map(s=>({size:s.label,width:90,length:25,style:30,sleeves:null,reason:'Too short despite adequate chest room.'})),reasons:[],limitations:[]},one,input);
- assert.equal(review.size,null);assert.equal(review.overallFit?.label,'Very poor fit');assert.match(review.summary,/Too short/i);
+ assert.equal(review.size,null);assert.equal(review.overallFit?.label,'Poor fit');assert.match(review.summary,/Too short/i);
 });
 
 test('Chest room uses actual arithmetic and keeps shoulder fit separate',()=>{

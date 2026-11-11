@@ -9,7 +9,7 @@ test('Overall item fit is independent of being the only size or winning a compar
  assert.deepEqual(overallFit({size:null,overallFit:{label:'Poor fit',reason:'Only available size is too short.'}}),{label:'Poor fit',reason:'Only available size is too short.'});
  assert.equal(overallFit({size:'L',basis:'tried'}).label,'Confirmed good fit');
  assert.equal(overallFit({size:'L'}).label,'Not enough data');
- assert.equal(overallFit({size:null,ranked:[{size:'L',overall:40,eligible:true,reason:'Too short.'}]}).label,'Not recommended');
+ assert.equal(overallFit({size:null,ranked:[{size:'L',overall:40,eligible:true,reason:'Too short.'}]}).label,'Not enough data');
 });
 
 test('Ten-point display preserves numeric estimates and never invents scores from labels',async()=>{
@@ -17,5 +17,11 @@ test('Ten-point display preserves numeric estimates and never invents scores fro
  assert.equal(fitScore(79),'7.9/10');assert.equal(fitScore(0),'0.0/10');assert.equal(fitScore(null),'Not enough data');assert.equal(fitScore(90,false),'Not recommended');
  assert.equal(overallScore({size:'L',overallFit:{label:'Good fit',reason:'Test'}}),'Not enough data');
  assert.equal(overallScore({size:'L',overallFit:{label:'Good fit',reason:'Test',score:8.1}}),'8.1/10');
- assert.equal(overallScore({size:null,ranked:[{size:'L',eligible:true,overall:30,reason:'Too short'}]}),'3.0/10');
+ assert.equal(overallScore({size:null,ranked:[{size:'L',eligible:true,overall:30,reason:'Too short'}]}),'Not enough data');
 });
+
+ test('Cut score stays independent from size scores and stock',async()=>{
+ const {overallScore}=await import('../src/fit-rating');
+ for(const score of [20,95])assert.equal(overallScore({size:'L',overallFit:{score:6.5,label:'Mixed fit',reason:'Cropped proportions'},ranked:[{size:'L',overall:score,eligible:true,reason:'Size fit'}]}),'6.5/10');
+ assert.equal(overallScore({size:null,overallFit:{score:8,label:'Good fit',reason:'Suitable cut, wrong stock'},ranked:[{size:'S',overall:null,eligible:false,reason:'Too small'}]}),'8.0/10');
+ });

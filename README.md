@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.9.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.10.
 
 **Free Chrome extension.** Compare clothing sizes, understand the reasons behind an estimate, and save what fits. Optional Anthropic API usage costs extra; local Ollama and a No AI measurement-comparison mode are also available.
 
@@ -44,7 +44,7 @@ FORMA can make a tentative size estimate from height, weight, fit preferences an
 
 ## Fit scores out of 10
 
-The popup and panel show an overall fit estimate **out of 10**, including single-size listings. Size comparisons also use the ten-point display scale. Unknown or excluded options are identified explicitly rather than given an invented number. Internally, one AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes the overall weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
+The popup and panel show an overall fit estimate **out of 10** for the garment’s cut and proportions, independent of size. It is not averaged from or capped by size scores. This also applies to single-size listings. Size comparisons also use the ten-point display scale. Unknown or excluded options are identified explicitly rather than given an invented number. Internally, one AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes each size’s weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
 
 The panel shows every size's total and component scores plus a short explanation. The compact shop card shows up to six totals near the top. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
 
@@ -182,3 +182,12 @@ Validation: 156 automated tests, TypeScript/build checks, isolated Chromium regr
 A compact page-level loading indicator appears while FORMA reads a clothing page or awaits its assessment, including when the side panel is closed. It avoids flashing for immediate results, is dismissible, respects reduced motion and stops when FORMA is paused or disconnected.
 
 Fixed the HTTP 400 error introduced with the ten-point score: the provider schema no longer includes unsupported numeric `minimum`/`maximum` keywords. Score bounds are still validated locally. Validation: 157 automated tests, TypeScript/build checks and isolated Chromium tests with simulated AI.
+
+### 1.3.10 updates
+
+- Overall fit evaluates the cut and proportions independently of size scores.
+- Related tried-fit experiences, including negative feedback and cached chart provenance, are included for comparable garments.
+- Photos can support a rough sleeve-reach estimate, accounting for raglan and dropped shoulders. Scaled centimetre ranges require a known pictured size and a usable same-size reference; visual estimates remain separate from published measurements.
+- Permitted active shop tabs start or repair their reader with the panel closed. Reusing a live reader does not trigger another assessment; the saved Off switch is respected.
+
+Validation: typecheck and 160 automated tests passed. The browser test reached the closed-panel loading/AI request checks, then failed a reader assertion in the wrong JavaScript world. That assertion was corrected; the full browser suite was not rerun before this release at the user’s request. Live AI judgement remains unverified.

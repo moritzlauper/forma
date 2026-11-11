@@ -1,3 +1,4 @@
+import {installReaderStartup} from './reader-startup';
 import {migrateProfile} from './profile-migration';
 import {withEstimates} from './estimates';
 import {recommend,validateProduct,type Profile,type Product} from './fit';
@@ -8,6 +9,7 @@ import {saveGoodFit,productIdentity,type GoodFit} from './good-fits';
 import {recordScan,enrichGoodFits,type ScanRecord} from './scan-library';
 let enabled=true;let activation=0;const controllers=new Set<AbortController>();
 const isEnabled=async()=>enabled&&(await chrome.storage.local.get('formaEnabled')).formaEnabled!==false;
+const startActiveReaders=installReaderStartup(chrome,isEnabled);
 const flights=new Map<string,Promise<Assessment>>();
 const settled=new Set<string>();
 const failed=new Set<string>();
@@ -99,8 +101,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(mode==='anthropic'&&!key)assessment={status:'blocked',model,error:'Add your API key in Settings to start AI fit assessment.'};
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
-    const input=inputForReview(page,product,withEstimates(migrateProfile(data.profile as Profile)),(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v20|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const input=inputForReview(page,product,withEstimates(migrateProfile(data.profile as Profile)),(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans),scans);
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v21|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -148,6 +150,7 @@ chrome.permissions.onRemoved.addListener(async()=>{
 chrome.storage.onChanged.addListener(async(changes,area)=>{
  if(area==='local'&&changes.formaEnabled){
   enabled=changes.formaEnabled.newValue!==false;activation++;
+  if(enabled)startActiveReaders();
   if(!enabled){for(const controller of controllers)controller.abort();flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
   for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'forma-enabled',enabled}).catch(()=>{});
   return;

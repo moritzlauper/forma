@@ -80,7 +80,7 @@ import {READER_PROTOCOL} from './page-connection';
    if(result.model&&result.status==='ready'){card.append(explanation);{const heading=document.createElement('p');heading.textContent=result.size?'Size '+result.size:'No suitable size yet';card.insertBefore(heading,explanation);}}else card.append(p);
    if(result.model){const source=document.createElement('small');source.textContent=result.cached?'Saved assessment':'AI fit estimate';card.append(source);}
    if(result.model&&result.status==='ready'){
-    const fit=overallFit({...result,ranked:result.scores});const rating=document.createElement('div');rating.className='scores';const title=document.createElement('strong');title.textContent='Overall fit · '+overallScore({...result,ranked:result.scores});const reason=document.createElement('small');reason.textContent=fit.reason;rating.append(title,reason);card.insertBefore(rating,explanation);
+    const fit=overallFit({...result,ranked:result.scores});const rating=document.createElement('div');rating.className='scores';const title=document.createElement('strong');title.textContent='Overall fit · '+overallScore({...result,ranked:result.scores});const reason=document.createElement('small');reason.textContent=fit.reason;const caption=document.createElement('small');caption.textContent='Cut & proportions · independent of size';rating.append(title,caption,reason);card.insertBefore(rating,explanation);
    }
    if(result.scores?.length>1){
     const comparison=document.createElement('details');const title=document.createElement('summary');title.textContent='Compare sizes';comparison.append(title);

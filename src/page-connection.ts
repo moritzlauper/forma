@@ -1,4 +1,4 @@
-export const READER_PROTOCOL='forma-reader-v12';
+export const READER_PROTOCOL='forma-reader-v13';
 export type Connection={status:'checking'|'connected'|'permission'|'unsupported'|'error';message:string;at:number};
 export function deadline<T>(work:Promise<T>,ms:number,message:string):Promise<T>{
  let timer:ReturnType<typeof setTimeout>;

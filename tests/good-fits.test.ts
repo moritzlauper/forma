@@ -28,3 +28,7 @@ test('Invalid or missing worn sizes cannot create comparable chart measurements'
  assert.equal(goodFitExamples([{...favourite,size:'XXL'}],product,profile)[0].measurements,null);
  assert.equal(goodFitExamples([{...favourite,size:'L',product:null}],product,profile)[0].measurements,null);
 });
+test('Bookmarking the current scan leaves the AI cache input unchanged',()=>{
+ const page={url:favourite.url,name:product.name,text:'',charts:[]};
+ assert.deepEqual(inputForReview(page,product,profile,[],'',[]),inputForReview(page,product,profile,[],'',[favourite]));
+});

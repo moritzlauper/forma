@@ -2,14 +2,17 @@ import {discoverCharts,collectProductImages,productText} from './page-discovery'
 import {detectClothingPage} from './product-page';
 import {READER_PROTOCOL} from './page-connection';
 (()=>{
- const w=window as unknown as {formaReader?:{protocol:string;dispose:()=>void}};if(w.formaReader?.protocol===READER_PROTOCOL)return;w.formaReader?.dispose();
+ const w=window as unknown as {formaReader?:{protocol:string;dispose:()=>void}};if(w.formaReader?.protocol===READER_PROTOCOL)return;try{w.formaReader?.dispose();}catch{}
  const host=document.createElement('div');host.id='forma-fit-card';const shadow=host.attachShadow({mode:'closed'});
  const style=document.createElement('style');style.textContent=':host{position:fixed;bottom:18px;right:18px;z-index:2147483647;font:14px/1.5 system-ui;color:#251e32}article{max-width:290px;background:#ece7f3;border:1px solid #8d859e;box-shadow:3px 3px #251e3222;padding:16px}b{color:#6d3fd1;letter-spacing:2px}p{margin:8px 0 0}small{display:block;margin-top:8px}';shadow.append(style);
  const card=document.createElement('article');shadow.append(card);let timer:ReturnType<typeof setTimeout>;let last='';let seq=0;let discovering=false;let pendingRetry=false;let pendingFresh=false;let guideURL='';let manualURL='';const attemptedGuides=new Set<HTMLElement>();
  let disposed=false;
- async function safeScan(retry=false,fresh=false){try{await scan(retry,fresh);}catch{
+ async function safeScan(retry=false,fresh=false){try{await scan(retry,fresh);}catch(error){
   last='';host.remove();
-  await chrome.runtime.sendMessage({type:'page-error',name:document.querySelector('h1')?.textContent||document.title}).catch(()=>{});
+  if(error instanceof Error&&/context invalidated/i.test(error.message)){dispose();return;}
+  // sendMessage may throw synchronously after an extension reload; .catch()
+  // on its return value cannot catch that. Stop the orphaned reader entirely.
+  try{await chrome.runtime.sendMessage({type:'page-error',name:document.querySelector('h1')?.textContent||document.title});}catch{dispose();}
  }}
  async function scan(retry=false,fresh=false){
   if(disposed)return;
@@ -60,5 +63,6 @@ import {READER_PROTOCOL} from './page-connection';
  chrome.runtime.onMessage.addListener(onMessage);
  const navigated=()=>{manualURL='';last='';host.remove();safeScan();};window.addEventListener('popstate',navigated);
  let previousURL=location.href;const interval=setInterval(()=>{if(previousURL!==location.href){previousURL=location.href;manualURL='';last='';seq++;host.remove();safeScan();}},500);
- w.formaReader={protocol:READER_PROTOCOL,dispose:()=>{disposed=true;seq++;observer.disconnect();clearTimeout(timer);clearInterval(interval);host.remove();window.removeEventListener('popstate',navigated);chrome.runtime.onMessage.removeListener(onMessage);}};safeScan();
+ function dispose(){disposed=true;seq++;observer.disconnect();clearTimeout(timer);clearInterval(interval);host.remove();window.removeEventListener('popstate',navigated);try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}
+ w.formaReader={protocol:READER_PROTOCOL,dispose};safeScan();
 })();

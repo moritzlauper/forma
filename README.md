@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.2.1.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.3.0.
 
 ## Install
 
@@ -10,7 +10,7 @@ New installations start with an empty profile. Existing profiles and saved API k
 
 ## Everyday use
 
-Describe your fit preferences in **Your profile**. The first-start card already selects Claude Haiku 5.5: enter your API key and choose **Enable AI & automatic detection**. Chrome asks for website access once. The key stays on this device; existing keys and explicit provider preferences are preserved. You can also enable automatic detection from Settings.
+Describe your fit preferences in **Your profile**. The first-start card already selects Claude Haiku 5.5: enter your API key and choose **Enable AI & automatic detection**. Chrome asks for website access once. The all-shops button also works while Chrome settings or an extension page is active, requests access directly from the click, and shows activation/denial beside the button. The key stays on this device; existing keys and explicit provider preferences are preserved. You can also enable automatic detection from Settings.
 
 Clothing product pages are recognised locally from product metadata, clothing names/categories, prices, sizes and purchase controls. This classification uses no AI or tokens. Catalogues, articles and unrelated products are skipped. On recognised pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart.
 
@@ -46,6 +46,12 @@ For the exact same saved product, an uncontradicted worn size is labelled **Your
 
 Optional measurements and manual charts remain available. Use semicolon/tab-separated columns such as `Size;Chest;Sleeve;Length`. Explicitly specify body/garment measurements, units and full/half circumferences. Reference garments need compatible measurement protocols.
 
+## Saved scan evidence
+
+Scans store the product URL, capture time, product description, image URLs, original chart text and parsed values in a local library of up to 50 products. Every parsed measurement retains its original unit, half-width convention, body/garment subject, source and normalised cm value. AI prose is not imported as a measurement. User-confirmed manual charts have a separate source label. Temporarily closed or unloaded guides do not erase previously captured evidence.
+
+Saving a good fit copies available scan evidence locally and makes **no AI request**. It does not refresh all open tabs or include an unsized bookmark in that same product's assessment input. Relevant saved examples are used on future products; their actual worn size is still needed for measurement comparison. The editor shows stored values, their normalisation and the source page. Saved good fits retain their copied evidence if an ordinary scan is later evicted. Existing profile-only exports do not include this scan library.
+
 ## Cost and privacy
 
 Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
@@ -64,13 +70,13 @@ The tabs permission lets the panel identify the active shop URL. Page content re
 
 Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. “Waist across front” is recognised as a flat garment width. Generic trouser LENGTH remains garment length, never an invented inseam; it can support a relative coverage score with uncertain measurement endpoints. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. If the provider explicitly rejects an image with HTTP 400, FORMA makes one budgeted retry without photos. The panel states that no photos were assessed. Other API errors display the provider reason with credentials and URLs removed.
 
-Size-guide discovery supports recognised in-page tabs, buttons and disclosures; it does not navigate to separate guide pages. General screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
+Size-guide discovery supports recognised in-page tabs, buttons and disclosures; it does not navigate to separate guide pages. A no-effect sizing click gets one bounded retry to handle delayed shop hydration; open dialogs are not toggled closed on parse failure. A size-guide preview shows the rows actually read. Shoe conversion guides may include a separately labelled foot-length column: only explicit centimetres are parsed as foot dimensions. **Usual shoe size · EU** is stored separately from measured foot length and can identify a tentative label in a conversion guide. General screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
 
 ## Verification
 
-97 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
+106 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
 
-The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
+The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also checks all-shop activation from an extension page, saving an EU shoe size, zero AI calls when bookmarking and persistent normalised scan evidence. It opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
 
 ## References
 

@@ -3,12 +3,18 @@ import {detect,type Page} from './detect';
 import {inputForReview,requestReview,type Assessment,type Feedback} from './assessment';
 import {createRequestBudget} from './request-budget';
 import type {GoodFit} from './good-fits';
+import {recordScan,enrichGoodFits,type ScanRecord} from './scan-library';
 const flights=new Map<string,Promise<Assessment>>();
 const settled=new Set<string>();
 const failed=new Set<string>();
 const budgetBlocked=new Set<string>();
 const reserveRequest=createRequestBudget(chrome.storage.local);
 const revisions=new Map<number,number>();
+let scanQueue:Promise<unknown>=Promise.resolve();
+function saveScan(page:Page,product:Product|null,source:ScanRecord['measurements'][number]['source']):Promise<ScanRecord[]>{
+ const job=scanQueue.then(async()=>{const saved=(await chrome.storage.local.get('scanLibrary')).scanLibrary;const previous=Array.isArray(saved)?saved as ScanRecord[]:[];const next=recordScan(previous,page,product,Date.now(),source);if(next!==previous)await chrome.storage.local.set({scanLibrary:next});return next;});
+ scanQueue=job.catch(()=>{});return job;
+}
 chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
@@ -38,6 +44,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   const fingerprint=JSON.stringify([page.name,page.charts]);
   const found=detect(page);
   const product=saved?.fingerprint===fingerprint?validateProduct(saved.product):found.product;
+  const scans=await saveScan(page,product,product===found.product?'shop-chart':'user-confirmed-chart');
   const settings=data.settings as {mode?:string;model?:string;limit?:number;assessmentVersion?:number}|undefined;
   const mode=settings?.assessmentVersion===1?(settings.mode||'anthropic'):(settings?.mode==='ollama'?'ollama':'anthropic');
   const model=mode==='ollama'?settings?.model||'':'claude-haiku-5-5';
@@ -49,8 +56,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(mode==='anthropic'&&!key)assessment={status:'blocked',model,error:'Add your API key in Settings to start AI fit assessment.'};
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
-    const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[]);
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v10|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v11|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -91,7 +98,7 @@ chrome.permissions.onRemoved.addListener(async()=>{
  for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
- if(area!=='local'||!['profile','description','settings','apiKey','feedback','goodFits'].some(k=>changes[k]))return;
+ if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]))return;
  if(changes.apiKey){flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
  if(changes.settings){
   // Budget edits release blocked work, but must not duplicate running requests.

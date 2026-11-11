@@ -24,10 +24,10 @@ test('Discovery does not click cart actions, submit buttons or external sizing l
  for(const html of ['<button>Add to cart</button>','<form><button>Sizing</button></form>','<a href="https://other.test/size-guide">Size guide</a>','<a href="/pages/size-guide">Size guide</a>'])assert.equal(findSizeGuide(documentFor('<main>'+html+'</main>')),null);
  assert.ok(findSizeGuide(documentFor('<main><a role="tab" href="#sizing">Sizing</a></main>')));
 });
-test('An unavailable guide is attempted once, not on each mutation',async()=>{
+test('An unresponsive guide gets one bounded hydration retry, not a click on each mutation',async()=>{
  const doc=documentFor('<main><button type="button">Size chart</button></main>');const attempted=new Set<HTMLElement>();let clicks=0;
  doc.querySelector('button')!.addEventListener('click',()=>clicks++);
- await discoverCharts(doc,attempted,async()=>{});await discoverCharts(doc,attempted,async()=>{});assert.equal(clicks,1);
+ await discoverCharts(doc,attempted,async()=>{});await discoverCharts(doc,attempted,async()=>{});assert.equal(clicks,2);
 });
 test('Custom shop tabs and linked hidden panels outside main are discoverable',async()=>{
  const doc=documentFor('<main><div class="product-tab" data-tab="sizing">Sizing</div></main><div id="sizing" hidden>'+table+'</div>');

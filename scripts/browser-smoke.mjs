@@ -9,7 +9,7 @@ const extension=join(temp,'extension');await cp(fileURLToPath(new URL('../dist',
 const manifest=JSON.parse(await readFile(join(extension,'manifest.json'),'utf8'));
 // Only this isolated test copy has pre-granted permissions. The shipped manifest
 // continues to request optional site permissions through the normal user flow.
-manifest.host_permissions=['http://127.0.0.1/*','https://api.anthropic.com/*'];
+manifest.host_permissions=['http://*/*','https://*/*'];
 await writeFile(join(extension,'manifest.json'),JSON.stringify(manifest));
 const context=await chromium.launchPersistentContext(join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
 try{
@@ -59,8 +59,13 @@ try{
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
  await panel.getByText('Test assessment completed #3',{exact:true}).waitFor({timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),3);
+ const beforeSave=await worker.evaluate(()=>globalThis.testRequests);
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='☆ Save as a good fit').click());
  await panel.getByText('✓ Saved as a good fit',{exact:true}).waitFor();
+ await panel.waitForTimeout(900);
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeSave,'Saving a scan must use no AI requests');
+ const savedScan=await worker.evaluate(async()=> (await chrome.storage.local.get('scanLibrary')).scanLibrary.find(r=>r.url.endsWith('/director-jeans-grey')));
+ assert.equal(savedScan.measurements.find(m=>m.size==='34'&&m.key==='waist').cm[0],92);
  await panel.getByText('Your good fit · optional details',{exact:true}).click();
  await panel.getByLabel('Size that actually fits you · optional').selectOption('34');
  await panel.getByLabel('What do you like? · optional').fill('Good full length and roomy legs.');
@@ -81,7 +86,16 @@ try{
  assert.equal(shortsInput.product.parsed,null);assert.equal(shortsInput.product.conversions.length,1);assert.equal(shortsInput.product.conversions[0].rows[0][1],'L');
  assert.equal(await shop.evaluate(()=>window.guideClicks),1);assert.equal(await worker.evaluate(()=>globalThis.shortsRequests),2);
  assert.equal(await worker.evaluate(async()=> (await chrome.storage.local.get('aiCount')).aiCount),await worker.evaluate(()=>globalThis.testRequests));
+ await panel.bringToFront();
+ await panel.getByRole('button',{name:/03.*Settings/}).click();
+ await panel.getByRole('button',{name:'Enable automatic detection on all shops',exact:true}).click();
+ await panel.getByRole('button',{name:'✓ Automatic detection is active',exact:true}).waitFor();
+ assert.ok((await worker.evaluate(()=>chrome.scripting.getRegisteredContentScripts())).some(s=>s.id==='all-shops'));
+ await panel.getByRole('button',{name:/02.*Your profile/}).click();
+ await panel.getByLabel('Usual shoe size · EU').fill('45');
+ await panel.getByLabel('Usual shoe size · EU').blur();
+ await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
  assert.deepEqual(errors,[]);
  if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
- console.log(JSON.stringify({result:'passed',automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,oneClickBookmark:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
+ console.log(JSON.stringify({result:'passed',automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

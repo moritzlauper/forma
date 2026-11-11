@@ -21,6 +21,12 @@ test('Manual activation reads a missed page, survives refresh, and resets on nav
   refresh({type:'refresh'},{},()=>{});await tick();assert.equal(sent.at(-1).manual,true);
   location.href='https://shop.test/about';checkURL();await tick();
   assert.equal(sent.at(-1).manual,false);assert.equal(sent.at(-1).text,'');
+  let invalidCalls=0;
+  globals.chrome.runtime.sendMessage=()=>{invalidCalls++;throw Error('Extension context invalidated.');};
+  globals.chrome.runtime.onMessage.removeListener=()=>{throw Error('Extension context invalidated.');};
+  refresh({type:'refresh',force:true},{},()=>{});await tick();await tick();
+  assert.equal(invalidCalls,1,'The orphaned reader stops instead of sending another error message');
+  location.href='https://shop.test/next';checkURL();await tick();assert.equal(invalidCalls,1);
  }finally{
   for(const [key,descriptor]of original)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key];
  }

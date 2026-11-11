@@ -6,6 +6,7 @@ import {sizeConversion} from '../src/chart-shape';
 import {detect} from '../src/detect';
 import {inputForReview,validateReview} from '../src/assessment';
 import type {Profile} from '../src/fit';
+import {understand} from '../src/profile-text';
 const rows=[['EU','INT','FR','IT','UK','JEANS'],['40','XXS','40','40','30','26'],['50','L','50','50','40','34']];
 const conversion=rows.map(row=>row.join(';')).join('\n');
 function doc(html:string){const {document}=parseHTML('<html><body>'+html+'</body></html>');Object.defineProperty(document,'URL',{value:'https://shop.test/shorts'});return document as unknown as Document;}
@@ -41,4 +42,24 @@ test('Same-product L fits is preserved without fabricating cm or scores; unrelat
  assert.equal(review.size,'L');assert.equal(review.basis,'tried');assert.deepEqual(review.ranked,[]);assert.match(review.summary,/recorded L/);assert.match(review.limitations[0],/converts size labels/);
  assert.equal(inputForReview({...page,url:'https://shop.test/other'},null,profile,feedback).decision.canSelectSize,false);
  assert.equal(inputForReview(page,null,profile,[...feedback,{...feedback[0],value:'Too tight'}]).decision.canSelectSize,false);
+});
+test('Shoe conversion guides with fractional sizes and extra length columns are read',()=>{
+ const text='EU;FR;IT;UK;US;Foot length (cm)\n45;45;45;11;12;29\n46.5;46.5;46.5;12;13;30';
+ const parsed=detect({...page,name:'Unisex Sneakers',charts:[{text,context:'Size guide'}]});
+ assert.equal(parsed.product?.sizes[0].label,'45');assert.equal(parsed.product?.sizes[0].measures.foot,29);
+ assert.equal(parsed.product?.measurementType,'body');
+ const noUnit=text.replace('Foot length (cm)','Foot length');assert.equal(detect({...page,name:'Sneakers',charts:[{text:noUnit,context:''}]}).product,null);assert.equal(sizeConversion(noUnit)?.rows.length,2);
+});
+test('Usual EU shoe size matches the read conversion guide without inventing foot length',()=>{
+ const shoePage={...page,name:'Unisex Sneakers',charts:[{text:'EU;FR;IT;UK;US\n44;44;44;10;11\n45;45;45;11;12',context:''}]};
+ const p={...profile,context:{height:185,weight:83,waistLabel:'',style:'',concerns:[],shoeSizeEU:'45'}};
+ const input=inputForReview(shoePage,null,p,[]);const raw={size:null,summary:'No table was read',reasons:[],limitations:[]};
+ const result=validateReview(raw,null,input);assert.equal(result.size,'45');assert.equal(result.basis,'estimate');assert.match(result.reasons[0],/UK 11/);assert.doesNotMatch(JSON.stringify(result),/Sleeves|No table was read/);
+ const missing=validateReview(raw,null,inputForReview(shoePage,null,profile,[]));assert.match(missing.summary,/Size guide read/);assert.match(missing.summary,/usual EU shoe size/);
+ assert.equal(understand('meine schuhgrösse ist 45').shoeSizeEU,'45');assert.equal(understand('shoe size EU 46.5').shoeSizeEU,'46.5');
+});
+test('A server-rendered guide is retried after hydration when the first click did nothing',async()=>{
+ const document=doc('<main><button type="button">Grössenberater öffnen</button></main>');let clicks=0,waits=0;
+ document.querySelector('button')!.addEventListener('click',()=>{clicks++;if(clicks===2)document.body.insertAdjacentHTML('beforeend','<div role="dialog"><table>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table></div>');});
+ assert.equal((await discoverCharts(document,new Set(),async()=>{waits++;})).length,1);assert.equal(clicks,2);assert.ok(waits>=9);
 });

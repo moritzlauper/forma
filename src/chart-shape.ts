@@ -1,11 +1,15 @@
 // Shared by the page collector and parser so transposed charts are not lost
 // before detection/AI sees them. No explicit "Size" heading is required.
-export const sizeLabel = /^(?:[2-6]?X{1,3}[SL]|[SML]|\d{2,3})$/i;
+export const sizeLabel = /^(?:[2-6]?X{1,3}[SL]|[SML]|\d{2,3}(?:[.,]\d+)?)$/i;
+const sizeSystem=(label:string)=>/^(?:EU|EUR|INT|INTERNATIONAL|FR|IT|UK|US|JEANS)(?:\s+(?:SIZE|GRÖSSE|GRÖßE))?(?:\s*\([^)]*\))?$/i.test(label);
 export function sizeConversion(text:string){
- const rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
+ let rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
+ if(rows.filter(row=>sizeSystem(row[0]||'')).length>=3&&rows.every(r=>r.length===rows[0].length))rows=rows[0].map((_,i)=>rows.map(r=>r[i]));
  const columns=rows[0]||[];
- const systems=columns.filter(c=>/^(?:EU|EUR|INT|INTERNATIONAL|FR|IT|UK|US|JEANS)$/i.test(c));
- if(systems.length<3||systems.length!==columns.filter(Boolean).length)return null;
+ const systems=columns.filter(sizeSystem);
+ // A guide may combine conversion labels with a separately labelled foot
+ // length. Preserve both; unit parsing decides whether cm are usable.
+ if(systems.length<3)return null;
  const values=rows.slice(1).filter(row=>row.length===columns.length&&row.filter(Boolean).length>=3);
  if(!values.length)return null;
  return {kind:'size-conversion' as const,columns,rows:values.filter((r,i)=>values.findIndex(other=>JSON.stringify(other)===JSON.stringify(r))===i)};

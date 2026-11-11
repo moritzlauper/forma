@@ -2,7 +2,7 @@ import {isSizeChart} from './chart-shape';
 import type {Chart} from './detect';
 
 const excluded='nav,footer,header,[id*="recommend"],[class*="recommend"],[id*="related"],[class*="related"]';
-const guideLabel=/^(?:(?:view|open|show)\s+)?(?:sizing|size\s*(?:guide|chart|&\s*fit)|fit\s*guide|measurements|grö(?:ss|ß)en(?:tabelle|berater|beratung)|grö(?:ss|ß)e\s*(?:&|und)\s*passform|ma(?:ss|ß)tabelle)(?:\s+(?:öffnen|anzeigen|ansehen))?$/i;
+const guideLabel=/^(?:(?:view|open|show)\s+)?(?:sizing|size\s*(?:guide|chart|&\s*fit)|fit\s*guide|measurements|passform|fit\s*(?:&|and)\s*size|grö(?:ss|ß)en(?:tabelle|berater|beratung)|grö(?:ss|ß)e\s*(?:&|und)\s*passform|ma(?:ss|ß)tabelle)(?:\s+(?:öffnen|anzeigen|ansehen))?$/i;
 const guideControls='button,a,summary,label,[role="tab"],[role="button"],[data-tab],[data-target],[aria-controls],[tabindex],[class*="tab"]';
 function isGuide(el:Element){return guideLabel.test((el.getAttribute('aria-label')||el.textContent||'').replace(/\s+/g,' ').trim());}
 export function productRoot(doc:Document):Element{return doc.querySelector('main')||doc.querySelector('[itemtype*="Product"]')||doc.body;}
@@ -30,9 +30,9 @@ export function collectCharts(doc:Document):Chart[]{
  // Some shop modals use plain CSS grids, with no table/ARIA semantics.
  // Require a recognisable header and consistent cells; never infer a chart
  // from arbitrary prose or unrelated product grids.
- for(const container of Array.from(doc.querySelectorAll(`${dialogs}`)).flatMap(d=>Array.from(d.querySelectorAll('div,section')))){
+ for(const container of Array.from(doc.querySelectorAll(`${dialogs}`)).flatMap(d=>[d,...Array.from(d.querySelectorAll('div,section'))])){
   if(container.closest('table,[role="table"],[role="grid"],#forma-fit-card'))continue;
-  const rows=Array.from(container.children).map(row=>Array.from(row.children).map(cell));
+  const rows=Array.from(container.children).map(row=>{let cells=row;for(let i=0;i<3&&cells.children.length===1&&cells.children[0].children.length;i++)cells=cells.children[0];return Array.from(cells.children).map(cell);});
   if(rows.length<2||rows[0].length<2||!rows.every(row=>row.length===rows[0].length&&row.every(c=>c.length<100)))continue;
   const text=rows.map(row=>row.join(';')).join('\n');
   if(isSizeChart(text))charts.push({visible:visible(container),text,context:context(container)});
@@ -45,7 +45,7 @@ export function collectCharts(doc:Document):Chart[]{
 export function findSizeGuide(doc:Document,attempted:Set<HTMLElement>=new Set()):HTMLElement|null{
  const roots=[productRoot(doc),...Array.from(doc.querySelectorAll('dialog,[role="dialog"],[aria-modal="true"]'))];
  return roots.flatMap(root=>Array.from(root.querySelectorAll<HTMLElement>(guideControls))).find(el=>{
-  if(attempted.has(el))return false;
+  if(attempted.has(el)||el.getAttribute('aria-expanded')==='true'||el.getAttribute('aria-selected')==='true')return false;
   if(el.closest(excluded)||!visible(el)||el.hasAttribute('disabled')||el.getAttribute('aria-disabled')==='true')return false;
   if(!isGuide(el))return false;
   if(el.tagName==='BUTTON'&&el.closest('form')&&el.getAttribute('type')!=='button'&&el.getAttribute('role')!=='tab')return false;
@@ -61,10 +61,18 @@ export async function discoverCharts(doc:Document,attempted:Set<HTMLElement>,wai
  while(attempted.size<3){
  const control=findSizeGuide(doc,attempted);if(!control)return charts;
  attempted.add(control);
+ const before=doc.body.textContent;
  if(control.tagName==='SUMMARY'&&control.parentElement?.tagName==='DETAILS')(control.parentElement as HTMLDetailsElement).open=true;
  else control.click();
  // Lazy-loaded guides can arrive after the click. Wait before sending to AI.
  for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return charts;}
+ // A server-rendered button can exist before its click handler is hydrated.
+ // Retry once only when the click had no observable effect. Never toggle an
+ // open dialog/accordion closed merely because parsing failed.
+ if(doc.body.textContent===before&&!doc.querySelector('dialog[open],[role="dialog"],[aria-modal="true"]')&&control.getAttribute('aria-expanded')!=='true'&&control.getAttribute('aria-selected')!=='true'&&control.tagName!=='SUMMARY'){
+  control.click();
+  for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return charts;}
+ }
  }
  return charts;
 }

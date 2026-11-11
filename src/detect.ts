@@ -8,7 +8,15 @@ export function detect(page:Page):{product:Product|null;reason:string}{
  if(!category)return {product:null,reason:'Product category not clear yet.'};
  const candidates:Product[]=[];let reason='FORMA could not read a size chart after checking this page’s size guide.';
  for(const chart of page.charts){
-  if(sizeConversion(chart.text)){reason='Size conversion chart found. It maps size labels, but contains no body or garment measurements.';continue;}
+  const conversion=sizeConversion(chart.text);
+  if(conversion){
+   const eu=conversion.columns.findIndex(c=>/^EU(?:R)?(?:\s|$)/i.test(c));
+   const foot=conversion.columns.findIndex(c=>/foot\s*length|fu(?:ss|ß)länge/i.test(c)&&/\bcm\b/i.test(c));
+   if(category==='shoes'&&eu>=0&&foot>=0){
+    try{candidates.push(parseTable('Size;foot\n'+conversion.rows.map(r=>r[eu]+';'+r[foot]).join('\n'),{name:page.name,category,measurementType:'body',unit:'cm',flat:false,source:page.url}));}catch{reason='Size labels were read, but foot lengths could not be parsed reliably.';}
+   }else reason='Size conversion chart found. It maps size labels; no clearly labelled body or garment measurements were parsed.';
+   continue;
+  }
   const context=(chart.text+'\n'+chart.context).toLowerCase();const unit=/\bcm\b|centimet/.test(context)?'cm':/\binches\b|\binch\b|\bzoll\b/.test(context)?'in':null;
   if(!unit){reason='The chart does not specify cm or inches.';continue;}
   if((/\bcm\b|centimet/.test(context))&&/\binches\b|\binch\b|\bzoll\b/.test(context)){reason='This chart mixes units. Select one unit in the shop.';continue;}

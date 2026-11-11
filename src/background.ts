@@ -28,6 +28,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
  const revision=(revisions.get(tab)||0)+1;revisions.set(tab,revision);
  (async()=>{
   const page:Page={url:sender.url||'',name:String(msg.name||'').slice(0,200),text:String(msg.text||'').slice(0,16000),charts:Array.isArray(msg.charts)?msg.charts.slice(0,12).map((t:{text?:unknown;context?:unknown})=>({text:String(t.text||'').slice(0,8000),context:String(t.context||'').slice(0,10000)})):[]};
+  if(msg.evidence&&typeof msg.evidence==='object')page.evidence={sizes:Array.isArray(msg.evidence.sizes)?msg.evidence.sizes.filter((s:unknown)=>typeof s==='string'&&s.length<=30).slice(0,60):[],models:Array.isArray(msg.evidence.models)?msg.evidence.models.filter((m:any)=>Number.isFinite(m.heightCm)&&typeof m.size==='string'&&typeof m.quote==='string').slice(0,3).map((m:any)=>({heightCm:m.heightCm,size:m.size.slice(0,30),quote:m.quote.slice(0,250)})):[],fit:Array.isArray(msg.evidence.fit)?msg.evidence.fit.filter((s:unknown)=>typeof s==='string'&&s.length<=40).slice(0,12):[],sourceHTML:String(msg.evidence.sourceHTML||'').slice(0,12000)};
   page.detection=msg.detection;page.manual=msg.manual===true;
   if(msg.type!=='page'){
    const error=msg.type==='page-error';
@@ -57,7 +58,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v12|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v13|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -98,12 +99,12 @@ chrome.permissions.onRemoved.addListener(async()=>{
  for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
- if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]))return;
+ if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]&&JSON.stringify(changes[k].oldValue)!==JSON.stringify(changes[k].newValue)))return;
  if(changes.apiKey){flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
  if(changes.settings){
   // Budget edits release blocked work, but must not duplicate running requests.
   for(const digest of budgetBlocked){flights.delete(digest);settled.delete(digest);}
   budgetBlocked.clear();
  }
- for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh'}).catch(()=>{});
+ for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh',reassess:true}).catch(()=>{});
 });

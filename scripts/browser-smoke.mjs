@@ -22,7 +22,8 @@ try{
    const body=JSON.parse(options.body);const content=body.messages[0].content;
    const input=JSON.parse(Array.isArray(content)?content[0].text:content);
    globalThis.testInput=input;
-   if(input.product.name==='Body Guide Shorts')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Body guide captured.',checks:{width:'Body waist range read.',length:'Body leg length, not shorts length.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
+   if(input.product.name==='Model Jeans')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34 x 32',summary:'I would try W34 L32 using your usual waist label and the similarly tall model.',checks:{width:'W34 matches the usual waist label; loose is a cut description.',length:'The 186 cm model wears L32; this is a tentative length reference.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
+   if(input.product.name==='Body Guide Shorts')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:input.product.parsed?null:'L',summary:input.product.parsed?'Body guide captured.':'I would try L from the guide labels.',checks:{width:'Body waist range read.',length:'Body leg length, not shorts length.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
    if(input.product.name==='Denim Shorts'){
     globalThis.shortsRequests=(globalThis.shortsRequests||0)+1;
     if(input.product.images.length)return new Response(JSON.stringify({error:{type:'invalid_request_error',message:'Could not process image'}}),{status:400});
@@ -37,9 +38,10 @@ try{
  const html=`<html><body><main><h1>Director Paint-Splattered Jeans</h1><button id="sizing" type="button">Sizing</button><div id="chart"></div><p>CHF 226</p><button>Add to cart</button></main><script>window.guideClicks=0;document.getElementById('sizing').onclick=()=>{window.guideClicks++;document.getElementById('chart').innerHTML=${JSON.stringify(chart)};};</script></body></html>`;
  const conversion='<div role="dialog"><h2>Grössentabelle</h2><p>Grössen und Masse können je nach Brand variieren.</p><div><div><span>EU</span><span>INT</span><span>FR</span><span>IT</span><span>UK</span><span>JEANS</span></div><div><span>50</span><span>L</span><span>50</span><span>50</span><span>40</span><span>34</span></div></div></div>';
  const shorts=`<html><head><meta property="og:image" content="https://images.example.test/shorts.jpg"></head><body><main><h1>Denim Shorts</h1><button type="button" aria-haspopup="dialog" id="guide">Grössenberater öffnen</button><p>Relaxed, knee length. CHF 30.</p><button>Add to cart</button></main><script>window.guideClicks=0;document.getElementById('guide').onclick=()=>{window.guideClicks++;document.body.insertAdjacentHTML('beforeend',${JSON.stringify(conversion)});};</script></body></html>`;
- const bodyTable='<h2>Körpermasse (cm)</h2><table><tr><th>EU</th><th>INT</th><th>TAILLENUMFANG</th><th>HÜFTUMFANG</th><th>BEINLÄNGE AN DER INNENSEITE</th></tr><tr><td>40</td><td>XXS</td><td>58.5</td><td>82.5</td><td>79.75</td></tr><tr><td>40</td><td>XXS</td><td>61</td><td>84</td><td>80</td></tr></table>';
+ const bodyTable='<h2>Körpermasse (cm)</h2><table><tr><th>EU</th><th>INT</th><th>TAILLENUMFANG</th><th>HÜFTUMFANG</th><th>BEINLÄNGE AN DER INNENSEITE</th></tr><tr><td>40</td><td>XXS</td><td>58.5</td><td>82.5</td><td>79.75</td></tr><tr><td>40</td><td>XXS</td><td>61</td><td>84</td><td>80</td></tr><tr><td>50</td><td>L</td><td>84</td><td>102</td><td>83</td></tr></table>';
  const lowerGuide=`<html><body><main><h1>Body Guide Shorts</h1><button type="button" id="guide">Grössenberater öffnen</button><p>CHF 30</p><button>Add to cart</button></main><script>document.getElementById('guide').onclick=()=>{const modal=document.createElement('div');modal.setAttribute('role','dialog');modal.style='height:200px;overflow:auto';modal.innerHTML=${JSON.stringify(conversion.replace('<div role="dialog">','<div>')+'<div style="height:600px"></div><div id="body-measurements"></div>')};document.body.append(modal);modal.onscroll=()=>{if(modal.scrollTop>200&&!document.querySelector('#body-measurements table'))document.getElementById('body-measurements').innerHTML=${JSON.stringify(bodyTable)};};};</script></body></html>`;
- await context.route('http://127.0.0.1:43119/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:route.request().url().endsWith('/body-shorts')?lowerGuide:route.request().url().endsWith('/denim-shorts')?shorts:html}));
+ const modelPage='<html><body><main><h1>Model Jeans</h1><p>Loose baggy fit. CHF 60</p><p>The model is 1.86m tall and is wearing size 32 x 32 (Inches)</p><select aria-label="Size"><option selected>24 x 32</option><option>32 x 32</option><option>34 x 32</option></select><button>Add to cart</button><span aria-live="polite" id="clock">1</span></main></body></html>';
+ await context.route('http://127.0.0.1:43119/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:route.request().url().endsWith('/model-jeans')?modelPage:route.request().url().endsWith('/body-unitless')?lowerGuide.replace('Körpermasse (cm)','Körpermasse'):route.request().url().endsWith('/body-shorts')?lowerGuide:route.request().url().endsWith('/denim-shorts')?shorts:html}));
  const shop=await context.newPage();await shop.goto('http://127.0.0.1:43119/collections/trousers/products/director-jeans-grey');
  assert.equal(await shop.evaluate(()=>!!window.formaReader),false);
  const panel=await context.newPage();const errors=[];panel.on('pageerror',e=>errors.push(e.message));
@@ -53,7 +55,7 @@ try{
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
  await panel.getByText('Test assessment completed #2',{exact:true}).waitFor({timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),2);
- await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.tabs.sendMessage(tab.id,{type:'refresh'});});
+ await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.tabs.sendMessage(tab.id,{type:'refresh',reassess:true});});
  await panel.getByText('AI ASSESSMENT · CACHED',{exact:true}).waitFor({timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),2);
  // Simulate the invalidated reader left in an open tab after extension reload:
@@ -96,6 +98,23 @@ try{
  assert.equal(await panel.getByRole('button',{name:'✓ Analysed',exact:true}).isDisabled(),true);
  assert.equal(await panel.getByRole('button',{name:'✓ Analysed',exact:true}).getAttribute('class'),null);
  assert.equal(await shop.getByRole('dialog').evaluate(e=>e.scrollTop),0);
+ await shop.goto('http://127.0.0.1:43119/products/body-unitless');await shop.bringToFront();
+ await panel.getByRole('heading',{name:'Estimated size: L',exact:true}).waitFor({timeout:15000});
+ const unitless=await worker.evaluate(()=>globalThis.testInput);assert.equal(unitless.product.parsed,null);assert.equal(unitless.decision.canSelectSize,true);assert.equal(unitless.product.measurementTables[0].unit,null);
+ await shop.goto('http://127.0.0.1:43119/products/model-jeans');await shop.bringToFront();
+ await panel.getByRole('heading',{name:'Estimated size: 34 x 32',exact:true}).waitFor({timeout:15000});
+ const modelInput=await worker.evaluate(()=>globalThis.testInput);assert.equal(modelInput.product.listingEvidence.models[0].heightCm,186);assert.ok(modelInput.product.sourceHTML.includes('32 x 32'));assert.equal(modelInput.product.parsed,null);
+ const stableRequests=await worker.evaluate(()=>globalThis.testRequests);
+ await shop.evaluate(()=>{window.removedFitCards=0;new MutationObserver(records=>{for(const r of records)if([...r.removedNodes].some(n=>n.id==='forma-fit-card'))window.removedFitCards++;}).observe(document.body,{childList:true});});
+ for(let i=0;i<3;i++){await shop.locator('#clock').evaluate((e,value)=>e.textContent=String(value),i);await panel.waitForTimeout(800);}
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),stableRequests);assert.equal(await shop.evaluate(()=>window.removedFitCards),0,'Unrelated DOM changes must not flicker the card');
+ const box=await shop.locator('#forma-fit-card').boundingBox();assert.ok(box);await shop.mouse.click(box.x+box.width-23,box.y+21);
+ await shop.locator('#forma-fit-card').waitFor({state:'detached'});
+ await shop.locator('#clock').evaluate(e=>e.textContent='changed after close');await panel.waitForTimeout(800);
+ assert.equal(await shop.locator('#forma-fit-card').count(),0);assert.equal(await worker.evaluate(()=>globalThis.testRequests),stableRequests);
+ await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
+ await shop.locator('#forma-fit-card').waitFor();assert.equal(await worker.evaluate(()=>globalThis.testRequests),stableRequests+1);
+
  await panel.bringToFront();
  await panel.getByRole('button',{name:/03.*Settings/}).click();
  await panel.getByRole('button',{name:'Enable automatic detection on all shops',exact:true}).click();
@@ -107,5 +126,5 @@ try{
  await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
  assert.deepEqual(errors,[]);
  if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
- console.log(JSON.stringify({result:'passed',automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
+ console.log(JSON.stringify({result:'passed',unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

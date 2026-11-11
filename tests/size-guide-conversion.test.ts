@@ -75,5 +75,5 @@ test('The lower body-measurement table is collected alongside conversions and re
  // misreported as a label-only conversion guide.
  const unknown={text:body,context:'Körpermasse'};assert.equal(measurementTable(unknown)?.unit,null);
  const input=inputForReview({...page,charts:[page.charts[0],unknown]},null,profile,[]);
- const review=validateReview({size:null,summary:'Only a conversion guide',reasons:[],limitations:[]},null,input);assert.match(review.summary,/Body-size measurements read/);assert.doesNotMatch(review.summary,/only.*conversion/i);
+ assert.equal(input.product.measurementTables[0]?.unit,null);assert.equal(input.decision.canSelectSize,false);assert.match(input.decision.blockers.join(' '),/height and weight/);
 });

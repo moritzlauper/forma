@@ -6,10 +6,11 @@ const guideLabel=/^(?:(?:view|open|show)\s+)?(?:sizing|size\s*(?:guide|chart|&\s
 const guideControls='button,a,summary,label,[role="tab"],[role="button"],[data-tab],[data-target],[aria-controls],[tabindex],[class*="tab"]';
 function isGuide(el:Element){return guideLabel.test((el.getAttribute('aria-label')||el.textContent||'').replace(/\s+/g,' ').trim());}
 export function productRoot(doc:Document):Element{return doc.querySelector('main')||doc.querySelector('[itemtype*="Product"]')||doc.body;}
+export function readableText(root:Node):string{const parts:string[]=[];const walk=(node:Node)=>{if(node.nodeType===3)parts.push(node.textContent||'');else for(const child of Array.from(node.childNodes))walk(child);};walk(root);return parts.join(' ').replace(/\s+/g,' ').trim();}
 export function productText(doc:Document):string{
  const copy=productRoot(doc).cloneNode(true) as Element;
- copy.querySelectorAll('script,style,noscript,nav,footer,header,#forma-fit-card').forEach(el=>el.remove());
- return (copy.textContent||'').replace(/\s+/g,' ').trim().slice(0,12000);
+ copy.querySelectorAll('script,style,noscript,nav,footer,header,#forma-fit-card,input,textarea,[contenteditable],[aria-live],[role="status"],[class*="recommend"],[class*="related"],[data-product-card],[class*="product-card"]').forEach(el=>el.remove());
+ return readableText(copy).slice(0,12000);
 }
 function visible(el:Element){
  for(let p:Element|null=el;p;p=p.parentElement){

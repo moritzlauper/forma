@@ -7,7 +7,7 @@ export function knownMeasures(profile:Profile):Partial<Record<Key,Measure>>{
 }
 // Distinguish an estimate from a measured comparison without requiring users
 // to measure themselves. Missing dimensions remain explicit uncertainties.
-export function sizeEvidence(product:Product|null,profile:Profile,description:string,feedback:{size:string;value:string}[],hasGoodFitExample=false){
+export function sizeEvidence(product:Product|null,profile:Profile,description:string,feedback:{size:string;value:string}[],hasGoodFitExample=false,guide:{excludedSizes?:string[];sizes:string[];matches:{size:string}[];uncertainties:string[]}={sizes:[],matches:[],uncertainties:[]}){
  const measures=knownMeasures(profile);
  const concerns=[...(profile.context?.concerns||[]),description].join('\n');
  const category=product?.category||profile.category;
@@ -20,10 +20,10 @@ export function sizeEvidence(product:Product|null,profile:Profile,description:st
  if(category==='trousers'&&(/Avoid short trousers/i.test(concerns)||/(?:trousers|pants|hosen)[^.\n]{0,50}(?:short|zu kurz)/i.test(concerns)))priorities.push('inseam');
  if(product&&/hoodie/i.test(product.name)&&/hoodies?[^.\n]{0,50}(?:short|zu kurz)/i.test(concerns))priorities.push('length');
  const blockers:string[]=[];
- if(!product&&!fitted.length)blockers.push('No verified size measurements are available for comparison.');
+ if(!product&&!fitted.length&&!guide.sizes.length)blockers.push('No verified size measurements are available for comparison.');
  if(profile.mode==='reference'&&product&&(profile.category!==product.category||product.measurementType!=='garment'))blockers.push('The reference garment and product chart are not comparable.');
  const hasBodyContext=!!profile.context?.height&&!!profile.context?.weight;
- if(!measures[primary]&&!fitted.length&&!hasBodyContext&&!hasGoodFitExample)blockers.push('Add height and weight, a known measurement, or a tried size to personalise the estimate.');
+ if(!measures[primary]&&!fitted.length&&!hasBodyContext&&!hasGoodFitExample&&!guide.matches.length)blockers.push('Add height and weight, a known measurement, or a tried size to personalise the estimate.');
  const eligibleSizes=product?.sizes.filter(s=>{
   if(feedback.some(f=>{
    if(!/too (tight|short|small)|zu (eng|kurz|klein)/i.test(f.value))return false;
@@ -36,12 +36,12 @@ export function sizeEvidence(product:Product|null,profile:Profile,description:st
    return dimensions.some(k=>s.measures[k]!==undefined&&tried.measures[k]!==undefined&&normalise(s.measures[k]!,product.unit,product.flat,k)[1]<=normalise(tried.measures[k]!,product.unit,product.flat,k)[0]);
   }))return false;
   return fitted.includes(s.label)||s.measures[primary]!==undefined;
- }).map(s=>s.label)||fitted;
- const unknowns:string[]=[];
+ }).map(s=>s.label)||Array.from(new Set([...fitted,...guide.sizes])).filter(size=>!guide.excludedSizes?.includes(size)&&!feedback.some(f=>sameSize(f.size,size)&&/too (tight|short|small)|zu (eng|kurz|klein)/i.test(f.value)));
+ const unknowns:string[]=[...guide.uncertainties];
  for(const k of priorities){
   if(!fitted.length&&(!measures[k]||!product?.sizes.some(s=>s.measures[k]!==undefined)))unknowns.push(k==='sleeve'?'Sleeve length is unverified. Wider chest measurements do not establish longer sleeves.':k==='inseam'?'Trouser length is uncertain without a comparable inseam.':'Preferred hoodie length is estimated from stature and preferences, not a measured reference.');
  }
  if(!eligibleSizes.length&&!blockers.length)blockers.push('No chart size remains supported after checking the available measurements and your recorded fit feedback.');
  const anchored=!!measures[primary]&&priorities.every(k=>!!measures[k]&&product?.sizes.every(s=>s.measures[k]!==undefined));
- return {canSelectSize:blockers.length===0,eligibleSizes:blockers.length?[]:eligibleSizes,priorities,blockers,unknowns,fittedSizes:fitted,basis:anchored?'comparison' as const:'estimate' as const,weights:fitWeights(product,priorities)};
+ return {canSelectSize:blockers.length===0,eligibleSizes:blockers.length?[]:eligibleSizes,priorities,blockers,unknowns,fittedSizes:fitted,basis:anchored&&!!product?'comparison' as const:'estimate' as const,weights:fitWeights(product,priorities)};
 }

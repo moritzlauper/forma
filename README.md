@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.3.0.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.3.1.
 
 ## Install
 
@@ -20,7 +20,11 @@ FORMA reads charts already present in closed sizing tabs. If a chart is loaded o
 
 Opening the panel reconnects to the active, already-permitted shop and starts a missing reader, including in tabs left open across extension updates. Missing website access, scan failures and interrupted assessments have explicit statuses instead of an indefinite “Waiting for AI”. **Refresh** reconnects, rereads sizing and requests a fresh AI assessment, bypassing a completed cached answer. Repeated clicks during an active request share that request; automatic scans still use the cache.
 
+When a measurement table cannot be parsed, the same AI request also receives up to 12,000 characters of sanitised product HTML and whitelisted Product JSON-LD fields. Scripts, input values and arbitrary attributes are excluded. Listed sizes, model height/worn size and fit descriptions are collected separately. Similar model height is a tentative length clue, not evidence of equal waist or body shape. Missing chart units prevent exact cm comparisons, but no longer veto every size estimate. A JEANS-to-INT mapping can connect the usual waist label to a published size without inventing body measurements.
+
 The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data, social preview metadata or the product gallery are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
+
+The shop card has a close button. Closing it keeps it hidden for that product until explicit analysis/Refresh or navigation. Unchanged product evidence does not reset the card or start another request; DOM announcements and unrelated tab updates no longer cause repeated refreshes.
 
 The panel shows the model, completion/cache status, image inclusion, reasons and limitations. Missing credentials, permission, exhausted request limits and API errors are shown explicitly. AI failures do not silently fall back to a local size suggestion. The AI can return no reliable size when evidence is insufficient.
 
@@ -48,13 +52,13 @@ Optional measurements and manual charts remain available. Use semicolon/tab-sepa
 
 ## Saved scan evidence
 
-Scans store the product URL, capture time, product description, image URLs, original chart text and parsed values in a local library of up to 50 products. Every parsed measurement retains its original unit, half-width convention, body/garment subject, source and normalised cm value. AI prose is not imported as a measurement. User-confirmed manual charts have a separate source label. Temporarily closed or unloaded guides do not erase previously captured evidence.
+Scans store the product URL, capture time, product description, image URLs, original chart text, model/size/fit evidence, the sanitised HTML fallback and parsed values in a local library of up to 50 products. Every parsed measurement retains its original unit, half-width convention, body/garment subject, source and normalised cm value. AI prose is not imported as a measurement. User-confirmed manual charts have a separate source label. Temporarily closed or unloaded guides do not erase previously captured evidence.
 
 Saving a good fit copies available scan evidence locally and makes **no AI request**. It does not refresh all open tabs or include an unsized bookmark in that same product's assessment input. Relevant saved examples are used on future products; their actual worn size is still needed for measurement comparison. The editor shows stored values, their normalisation and the source page. Saved good fits retain their copied evidence if an ordinary scan is later evicted. Existing profile-only exports do not include this scan library.
 
 ## Cost and privacy
 
-Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
+Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, the bounded sanitised source fallback when parsing fails, model/size/fit details, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
 
 Keys are remembered in trusted extension-local storage on this device and excluded from profile exports. Browser storage is not an encrypted password vault. Settings includes **Forget API key**. No key is embedded in page scripts or source.
 
@@ -76,9 +80,9 @@ Size-guide discovery supports recognised in-page tabs, buttons and disclosures; 
 
 The guide reader also collects lower body-measurement tables, including repeated international sizes as ranges. Published body references remain distinct from garment dimensions. Newly discovered tables enrich saved good fits without an extra AI request. After analysis, the main button becomes a disabled “✓ Analysed”; Refresh starts a new assessment.
 
-109 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
+114 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
 
-The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also checks all-shop activation from an extension page, saving an EU shoe size, zero AI calls when bookmarking and persistent normalised scan evidence. It opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
+The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also checks all-shop activation from an extension page, saving an EU shoe size, zero AI calls when bookmarking and persistent normalised scan evidence. It opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It also verifies unitless-guide estimates, model-size/source fallbacks, close-button persistence and zero requests or card removals during repeated live-region mutations. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
 
 ## References
 

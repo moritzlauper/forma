@@ -1,8 +1,9 @@
+import type {ProductEvidence} from './product-evidence';
 import {parseTable,type Category,type Product,type Key} from './fit';
 import {sizeLabel,sizeConversion} from './chart-shape';
 import {clothingCategory,type PageDetection} from './product-page';
 export type Chart={text:string;context:string};
-export type Page={url:string;name:string;text:string;charts:Chart[];images?:string[];detection?:PageDetection;manual?:boolean};
+export type Page={evidence?:ProductEvidence;url:string;name:string;text:string;charts:Chart[];images?:string[];detection?:PageDetection;manual?:boolean};
 export function detect(page:Page):{product:Product|null;reason:string}{
  const category:Category|null=page.detection?.category||clothingCategory(page.name);
  if(!category)return {product:null,reason:'Product category not clear yet.'};

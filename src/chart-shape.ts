@@ -35,3 +35,33 @@ export function isSizeChart(text:string):boolean {
  const hasMeasurements=/(?:^|\s)(?:pit[\s-]+to[\s-]+pit|chest|bust|waist|hips?|sleeves?|length|brust\w*|taille\w*|hüft\w*|ärmel\w*|länge)(?:\s|\(|$)/i.test(rows.slice(1).map(row=>row[0]).join(' '));
  return sizes.length>0&&sizes.every(size=>sizeLabel.test(size))&&hasMeasurements&&rows.slice(1).some(row=>row.slice(1).some(cell=>/\d/.test(cell)));
 }
+
+// Read labels independently of measurement units. This supports a tentative
+// choice without promoting unlabelled numbers to verified centimetres.
+export function guideSizeEvidence(charts:{text:string;context:string}[],category:string,waistLabel='',feedback:{size:string;value:string}[]=[]){
+ const tables=charts.map(measurementTable).filter(t=>t?.subject==='body');
+ const labels=(column:string)=>category==='shoes'?/^EU(?:R)?$/i.test(column):/^INT(?:ERNATIONAL)?$/i.test(column);
+ const valid=(label:string)=>sizeLabel.test(label)||/^[2-6]?X{0,3}[SML](?:\/[2-6]?X{0,3}[SML])+$/i.test(label);
+ const sizes=Array.from(new Set(tables.flatMap(t=>{
+  const index=t!.columns.findIndex(labels);
+  return index<0?[]:t!.rows.filter(r=>r.length===t!.columns.length).map(r=>r[index]).filter(valid);
+ })));
+ const usual=new Set(waistLabel.match(/\d{2,3}(?:[.,]\d+)?/g)||[]);
+ const matches=category==='trousers'?charts.flatMap(c=>{
+  const guide=sizeConversion(c.text);if(!guide)return [];
+  const jeans=guide.columns.findIndex(c=>/^JEANS$/i.test(c)),international=guide.columns.findIndex(c=>/^INT(?:ERNATIONAL)?$/i.test(c));
+  if(jeans<0||international<0)return [];
+  return guide.rows.filter(r=>usual.has(r[jeans])&&sizes.includes(r[international])).map(r=>({size:r[international],system:'JEANS',label:r[jeans]}));
+ }):[];
+ const excludedSizes=new Set<string>();
+ // Within one reference table, relative widths remain comparable even when
+ // the unit is unstated. A smaller range cannot fix reported tightness.
+ for(const t of tables){
+  const label=t!.columns.findIndex(labels),width=t!.columns.findIndex(c=>category==='trousers'?/waist|taille/i.test(c):/chest|bust|brust/i.test(c));
+  if(label<0||width<0)continue;
+  const widths=new Map<string,number[]>();
+  for(const row of t!.rows){const cell=(row[width]||'').replace(',','.');if(!/^\d+(?:\.\d+)?$/.test(cell))continue;const values=widths.get(row[label])||[];values.push(Number(cell));widths.set(row[label],values);}
+  for(const f of feedback.filter(f=>/too tight|zu eng/i.test(f.value))){const tried=[...widths].find(([size])=>size.toUpperCase()===f.size.trim().toUpperCase())?.[1];if(!tried)continue;for(const [size,values]of widths)if(Math.max(...values)<=Math.min(...tried))excludedSizes.add(size);}
+ }
+ return {sizes,matches,excludedSizes:[...excludedSizes],uncertainties:tables.some(t=>!t!.unit)?['The body-size table does not state a single measurement unit. Its values are retained as published, not verified centimetres.']:[]};
+}

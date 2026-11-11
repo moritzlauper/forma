@@ -198,6 +198,8 @@ try{
  await panel.getByRole('button',{name:'Refresh',exact:true}).click();
  for(let i=0;i<100;i++){if(await worker.evaluate(()=>globalThis.held))break;await panel.waitForTimeout(100);}
  assert.ok(await worker.evaluate(()=>globalThis.held));
+ await shop.locator('#forma-loading').waitFor();
+ if(process.env.FORMA_LOADING_SCREENSHOT)await shop.screenshot({path:process.env.FORMA_LOADING_SCREENSHOT});
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
  const beforeNotes=await worker.evaluate(()=>globalThis.testRequests);
  const notes='waist 46cm bei hosen sind mir gerade noch knapp okay, lieber bisschen grösser, darunter lieber nicht. Beine bitte nicht noch weiter.';

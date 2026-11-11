@@ -5,6 +5,12 @@ import type {Profile,Product} from '../src/fit';
 const profile:Profile={mode:'body',name:'private name',category:'top',fit:'relaxed',measures:{chest:{value:100,uncertainty:12,estimated:true}}};
 const page={url:'https://example.test/products/hoodie?variant=1',name:'Box hoodie',text:'Heavyweight box fit hoodie',charts:[]};
 const product:Product={name:page.name,category:'top',measurementType:'garment',unit:'cm',flat:true,source:page.url,sizes:[{label:'M',available:true,measures:{chest:60}},{label:'L',available:true,measures:{chest:63}}]};
+test('Overall score uses API-supported schema fields and local range validation',()=>{
+ const schema=reviewSchema.properties.overallFit.properties.score;
+ assert.equal('minimum' in schema,false);assert.equal('maximum' in schema,false);
+ const input=inputForReview(page,product,profile,[]);
+ for(const score of [-1,11,Infinity,NaN])assert.throws(()=>validateReview({overallFit:{score,label:'Good fit',reason:'Test'},size:null,summary:'Test',reasons:[],limitations:[]},product,input),/Invalid overall fit score/);
+});
 test('Fit assessment requests schema-constrained JSON from both providers',async()=>{
  const previous=globalThis.fetch;let local=false;
  globalThis.fetch=async(_url,init)=>{

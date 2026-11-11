@@ -1,3 +1,4 @@
+import {createLoadingIndicator} from './loading-indicator';
 import {makePopupMovable} from './popup-position';
 import {fitScore,overallScore,overallFit} from './fit-rating';
 import {watchRuntimeInvalidation} from './runtime-lifecycle';
@@ -18,6 +19,7 @@ import {READER_PROTOCOL} from './page-connection';
  const dismissalKey='forma-dismissed-products';
  const dismissed=()=>{try{const value=JSON.parse(sessionStorage.getItem(dismissalKey)||'[]');return Array.isArray(value)?value.filter((u:unknown)=>typeof u==='string'):[] as string[];}catch{return [] as string[];}};
  const setDismissed=(url:string,value:boolean)=>{dismissedURL=value?productIdentity(url):'';try{const list=dismissed().filter(u=>u!==productIdentity(url));if(value)list.push(productIdentity(url));sessionStorage.setItem(dismissalKey,JSON.stringify(list.slice(-50)));}catch{}};
+ const loading=createLoadingIndicator(()=>{setDismissed(location.href,true);host.remove();});
  const messenger=createRuntimeMessenger(chrome.runtime,()=>dispose());
  watchRuntimeInvalidation(window,chrome.runtime,()=>dispose());
  async function safeScan(retry=false,fresh=false){try{await scan(retry,fresh);}catch(error){
@@ -30,7 +32,7 @@ import {READER_PROTOCOL} from './page-connection';
  async function scan(retry=false,fresh=false){
   if(disposed||!messenger.alive())return;
   const state=await messenger.send({type:'forma-state'});enabled=state?.enabled!==false;
-  if(!enabled){host.remove();return;}
+  if(!enabled){loading.stop();host.remove();return;}
   if(discovering){pendingRetry ||=retry;pendingFresh ||=fresh;return;}
   const url=location.href;
   if(retainedIdentity!==productIdentity(url)){retainedIdentity=productIdentity(url);retainedCharts=[];retainedEvidence=undefined;rendered='';last='';host.remove();}
@@ -39,11 +41,15 @@ import {READER_PROTOCOL} from './page-connection';
    const signature=JSON.stringify([url,detection]);if(signature===last)return;last=signature;seq++;host.remove();
    await messenger.send({type:'page',name:detection.name,text:'',charts:[],images:[],detection,manual:false}).catch(()=>{});return;
   }
+  let finishLoading=()=>{};let loadingStarted=false;
+  const showLoading=()=>{if(!loadingStarted&&dismissedURL!==productIdentity(url)&&!dismissed().includes(productIdentity(url))){loadingStarted=true;finishLoading=loading.start();}};
+  try{
   if(guideURL!==url||retry){guideURL=url;attemptedGuides.clear();}
   discovering=true;
   let charts;
   try{
    if(!last||retry||fresh){
+    showLoading();
     await messenger.send({type:'page-progress',name:detection.name,detection,manual});
     charts=await discoverCharts(document,attemptedGuides);
    }else charts=collectCharts(document);
@@ -61,10 +67,11 @@ import {READER_PROTOCOL} from './page-connection';
   const evidence=mergeListing(retainedEvidence,collectProductEvidence(document));retainedEvidence=evidence;
   const signature=JSON.stringify([url,name,charts,photos,description,evidence,manual]);
   if(signature===last&&!retry&&!fresh)return;
-  last=signature;const id=++seq;
+  showLoading();last=signature;const id=++seq;
   try{const answer=await messenger.send({type:'page',name,charts,images:photos,text:description,evidence,retry,fresh,detection,manual});if(disposed||!enabled||id!==seq||url!==location.href||!answer?.result||(dismissedURL===productIdentity(url)||dismissed().includes(productIdentity(url))))return;
    renderResult(answer.result,url);
   }catch(error){throw error;}
+  }finally{finishLoading();}
  }
  function renderResult(result:any,url:string){
    const presentation=JSON.stringify({...result,cached:undefined});if(presentation===rendered&&host.isConnected)return;rendered=presentation;
@@ -86,7 +93,7 @@ import {READER_PROTOCOL} from './page-connection';
    if(!host.isConnected)document.body.append(host);
  }
  const observer=new MutationObserver(m=>{
-  if(m.every(r=>r.target===host||(r.type==='childList'&&Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).every(n=>n===host))))return;
+  if(m.every(r=>r.target===host||r.target===loading.host||(r.type==='childList'&&Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).every(n=>n===host||n===loading.host))))return;
   if(discovering)return;
   // DOM animations and announcements must not reset a completed assessment.
   // Re-read locally and send only when the actual product evidence changes.
@@ -96,7 +103,7 @@ import {READER_PROTOCOL} from './page-connection';
  const onMessage=(m:any,_sender:chrome.runtime.MessageSender,reply:(response:unknown)=>void)=>{
   if(disposed)return;
   try{
-  if(m.type==='forma-enabled'){enabled=m.enabled!==false;seq++;clearTimeout(timer);if(!enabled){host.remove();}else{last='';safeScan();}reply({accepted:true});return;}
+  if(m.type==='forma-enabled'){enabled=m.enabled!==false;seq++;clearTimeout(timer);if(!enabled){loading.stop();host.remove();}else{last='';safeScan();}reply({accepted:true});return;}
   if(!enabled&&m.type!=='forma-ping'){reply({paused:true});return;}
   if(m.type==='show-result'&&m.url===location.href&&typeof m.result?.message==='string'){setDismissed(location.href,false);renderResult(m.result,location.href);reply({shown:true});return;}
   if(m.type==='forma-ping'){reply({protocol:READER_PROTOCOL,url:location.href});return;}
@@ -104,8 +111,8 @@ import {READER_PROTOCOL} from './page-connection';
   }catch{dispose();}
  };
  chrome.runtime.onMessage.addListener(onMessage);
- const navigated=()=>{if(productIdentity(previousURL)!==productIdentity(location.href)){dismissedURL='';manualURL='';last='';rendered='';retainedCharts=[];retainedEvidence=undefined;host.remove();}previousURL=location.href;safeScan();};window.addEventListener('popstate',navigated);
+ const navigated=()=>{if(productIdentity(previousURL)!==productIdentity(location.href)){loading.stop();dismissedURL='';manualURL='';last='';rendered='';retainedCharts=[];retainedEvidence=undefined;host.remove();}previousURL=location.href;safeScan();};window.addEventListener('popstate',navigated);
  let previousURL=location.href;const interval=setInterval(()=>{if(!messenger.alive())return;if(previousURL!==location.href){seq++;navigated();}},500);
- function dispose(){if(disposed)return;disposed=true;seq++;messenger.close();for(const cleanup of [cleanupDrag,()=>observer.disconnect(),()=>clearTimeout(timer),()=>clearInterval(interval),()=>host.remove(),()=>window.removeEventListener('popstate',navigated),()=>chrome.runtime.onMessage.removeListener(onMessage)])try{cleanup();}catch{}}
+ function dispose(){if(disposed)return;disposed=true;seq++;messenger.close();for(const cleanup of [loading.stop,cleanupDrag,()=>observer.disconnect(),()=>clearTimeout(timer),()=>clearInterval(interval),()=>host.remove(),()=>window.removeEventListener('popstate',navigated),()=>chrome.runtime.onMessage.removeListener(onMessage)])try{cleanup();}catch{}}
  w.formaReader={protocol:READER_PROTOCOL,dispose};safeScan();
 })();

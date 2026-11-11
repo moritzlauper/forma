@@ -60,5 +60,5 @@ test('Without chart or any personal context there is still no useful size choice
 test('The displayed recommendation follows the calculated scores without stale prose',()=>{
  const input=inputForReview(page,product,profile,[]);
  const review=validateReview({size:'M',summary:'M is the best choice.',checks,ratings:ratings('L'),reasons:['Choose M'],limitations:['M-specific limitation']},product,input);
- assert.equal(review.size,'L');assert.match(review.summary,/L has the highest/);assert.doesNotMatch(JSON.stringify(review.reasons),/Choose M/);assert.doesNotMatch(JSON.stringify(review.limitations),/M-specific/);
+ assert.equal(review.size,'L');assert.match(review.summary,/L is the closest estimated match/);assert.doesNotMatch(JSON.stringify(review.reasons),/Choose M/);assert.doesNotMatch(JSON.stringify(review.limitations),/M-specific/);
 });

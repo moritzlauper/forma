@@ -58,3 +58,10 @@ test('SCRT Odessa transposed waist/length table supplies usable sizes even witho
 });
 
 test('An unsuitable cut keeps scores but does not become a recommendation just because one size remains',()=>{const p={url:'https://shop.test/jeans',name:'Jeans',text:'Wide legs',charts:[{text:';34;36\nWAIST (CM);46;48.5\nLENGTH (CM);107;108',context:'Sizing'}]};const input=inputForReview(p,null,profile,[{name:p.name,size:'34',value:'Too tight'}],'Only slightly more waistband room; do not widen the legs.');assert.deepEqual(input.decision.eligibleSizes,['36']);const review=validateReview({...result,size:null,summary:'I would skip this cut: the larger size adds more leg width than wanted.',ratings:[{size:'34',width:40,length:70,style:50,sleeves:null,reason:'Waist too tight.'},{size:'36',width:45,length:75,style:30,sleeves:null,reason:'More waist room but excessively wide legs.'}]},null,input);assert.equal(review.size,null);assert.equal(review.ranked?.length,2);assert.equal(review.ranked?.find(s=>s.size==='34')?.overall,null);assert.ok(review.ranked?.find(s=>s.size==='36')?.overall);});
+
+test('Named model captions with a size are retained alongside a parsed jacket chart',()=>{
+ const {document}=parseHTML('<html><body><main><h1>Denim jacket</h1><figure><figcaption>Miles is 182cm and wears a size L.</figcaption></figure><p>Cropped denim jacket</p></main></body></html>');
+ const evidence=collectProductEvidence(document);assert.deepEqual(evidence.models,[{heightCm:182,size:'L',quote:'Miles is 182cm and wears a size L'}]);
+ const product={name:'Denim jacket',category:'jacket' as const,measurementType:'garment' as const,unit:'cm' as const,flat:true,source:'https://shop.test/jacket',sizes:[{label:'M',available:true,measures:{chest:59.5,length:59}},{label:'L',available:true,measures:{chest:62,length:60}}]};
+ const input=inputForReview({...page,name:product.name,url:product.source,evidence},product,profile,[]);assert.equal(input.product.listingEvidence?.models[0].size,'L');assert.equal(input.product.listingEvidence?.models[0].heightCm,182);
+});

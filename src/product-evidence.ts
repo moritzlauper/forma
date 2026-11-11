@@ -30,7 +30,7 @@ export function collectProductEvidence(doc:Document):ProductEvidence{
  copy.querySelectorAll(excluded+',script,style,noscript,input,textarea,[contenteditable],[aria-live],[role="status"]').forEach(el=>el.remove());
  // Keep product text beyond the first screen, including model annotations.
  const text=readableText(copy)+' '+structured.map(p=>p.description).join(' ');
- const pattern=/\bmodel\b[^.!?\n]{0,45}?(\d{3}|\d[.,]\d{1,2})\s*(cm|m)\b.{0,65}?(?:(?:wearing|wears)(?:\s+size)?|trägt(?:\s+(?:die\s+)?grö(?:ss|ß)e)?)\s*([2-6]?X{0,3}[SML](?:\/[2-6]?X{0,3}[SML])?|\d{2,3}(?:[.,]\d+)?(?:\s*[x×]\s*\d{2,3})?)(?=\s|[.,;(]|$)/gi;
+ const pattern=/(?:\bmodel\b[^.!?\n]{0,45}?|\b[A-Z][a-zÀ-ÿ-]{1,30}\s+(?:is|ist)\s+)(\d{3}|\d[.,]\d{1,2})\s*(cm|m)\b.{0,65}?(?:(?:wearing|wears)(?:\s+(?:a\s+)?size)?|trägt(?:\s+(?:die\s+)?grö(?:ss|ß)e)?)\s*([2-6]?X{0,3}[SML](?:\/[2-6]?X{0,3}[SML])?|\d{2,3}(?:[.,]\d+)?(?:\s*[x×]\s*\d{2,3})?)(?=\s|[.,;(]|$)/gi;
  for(const match of text.matchAll(pattern)){
   const height=Number(match[1].replace(',','.'))*(match[2].toLowerCase()==='m'?100:1);
   if(height>=100&&height<=250)models.push({heightCm:Math.round(height),size:normaliseSize(match[3]),quote:match[0].slice(0,250)});

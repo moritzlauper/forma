@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.5.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.6.
 
 ## Install
 
@@ -131,3 +131,15 @@ Good fits and product feedback share the same size/note form and **Save feedback
 Read measurement tables now receive relative size scores even without a resolved flat-width convention. Unknown factors stay blank; no precise measurements are invented. Scores remain visible when the model judges the cut unsuitable. The prompt explicitly rejects forced upsizing when added waist room would worsen leg width; it does not guarantee real-world fit.
 
 Validation: automated tests plus isolated Chromium with simulated AI responses cover raw notes during a pending request, editable feedback, scores from transposed charts and repeated panel reopening without extra AI calls. Live model recommendations are not verified by these tests.
+
+### 1.3.6 updates
+
+Fit results now use **Poor fit**, **Mixed fit**, **Good fit** and **Very good fit** instead of exposing numerical scores. These remain estimates; the app does not label an AI prediction a perfect fit. Internal rankings are unchanged. Other sizes and explanations are available under **Compare sizes** and **Why this fit?**, keeping the popup compact. Excluded sizes say **Not recommended** and missing evidence says **Not enough data**.
+
+Model captions such as “Miles is 182cm and wears a size L” are extracted alongside charts. Named models and “a size” wording are supported. Assessment instructions compare model/cut evidence with the full uncertainty range of estimated body measurements, rather than using the midpoint as a precise body size.
+
+Response budgets scale with the chart size count. A token-limited answer gets at most one additional, budgeted request with more output space; incomplete responses are never used. Image and length recovery share the same one-retry cap. Ordinary request failures are not retried automatically.
+
+A lifecycle handler disposes a disconnected reader and handles late “Extension context invalidated” promise rejections only when its own runtime is gone. Live-context errors and unrelated failures remain visible. Browser regression coverage now includes an in-flight request during reload and late rejection delivery in the isolated content-script world. Source maps improve future error locations. The specific reported live Chrome occurrence could not be reproduced directly.
+
+Validation: 141 automated tests, TypeScript/build checks, isolated Chromium tests with simulated AI, and narrow-panel/popup visual inspection. No live model fit prediction was verified.

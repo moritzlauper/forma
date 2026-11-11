@@ -166,8 +166,10 @@ try{
  await shop.goto('http://127.0.0.1:43119/products/odessa');await shop.bringToFront();
  await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).waitFor({timeout:15000});
  const odessaInput=await worker.evaluate(()=>globalThis.testInput);
- await panel.getByRole('heading',{name:'Fit scores',exact:true}).waitFor();
- await panel.getByText(/Fit score:.*\/100/).waitFor();
+ await panel.getByText('Compare sizes',{exact:true}).waitFor();
+ await panel.locator('.fit-score').filter({hasText:/Good fit|Very good fit/}).waitFor();
+ assert.doesNotMatch(await panel.locator('.fit-score').innerText(),/\/100/);
+ if(process.env.FORMA_FIT_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.locator('.fit-score').scrollIntoViewIfNeeded();await panel.screenshot({path:process.env.FORMA_FIT_SCREENSHOT});await shop.screenshot({path:process.env.FORMA_FIT_SCREENSHOT.replace('.png','-popup.png')});}
  assert.equal(odessaInput.product.parsed,null);assert.equal(odessaInput.product.measurementTables[0].rows.length,6);
  assert.equal(odessaInput.product.measurementTables[0].rows[4][2],'107');assert.equal(odessaInput.decision.canSelectSize,true);
  await panel.bringToFront();
@@ -224,10 +226,24 @@ try{
  if(process.env.FORMA_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});}
  // Invalidate the real isolated extension while keeping its shop tab open.
  const shopErrors=[];shop.on('pageerror',error=>shopErrors.push(error.message));
+ const debuggerSession=await context.newCDPSession(shop);let readerContext;
+ debuggerSession.on('Runtime.executionContextCreated',({context:c})=>{if(c.origin===`chrome-extension://${id}`)readerContext=c.id;});
+ await debuggerSession.send('Runtime.enable');
+ const isolatedErrors=[];debuggerSession.on('Runtime.exceptionThrown',event=>isolatedErrors.push(event.exceptionDetails.exception?.description||event.exceptionDetails.text));
+ // Keep an actual content-script message pending during invalidation, not only an idle reader.
+ await worker.evaluate(()=>{globalThis.holdNext=true;globalThis.held=false;});
+ await panel.getByRole('button',{name:/01.*Your fit/}).click();
+ await panel.getByRole('button',{name:'Refresh',exact:true}).click();
+ for(let i=0;i<100&&!await worker.evaluate(()=>globalThis.held);i++)await shop.waitForTimeout(50);
+ assert.equal(await worker.evaluate(()=>globalThis.held),true,'A request is pending when the extension reloads');
  await worker.evaluate(()=>chrome.runtime.reload()).catch(()=>{});
  await shop.waitForTimeout(1000);
+ assert.ok(readerContext,'The test observes the extension isolated world');
+ await debuggerSession.send('Runtime.evaluate',{contextId:readerContext,expression:"void Promise.reject(new Error('Extension context invalidated.'))"});
+ await shop.waitForTimeout(100);
  for(let i=0;i<3;i++){await shop.evaluate(i=>document.querySelector('h1').textContent='Odessa Jeans '+i,i);await shop.waitForTimeout(700);}
  assert.equal(await shop.locator('#forma-fit-card').count(),0,'An invalidated reader disposes its popup');
  assert.deepEqual(shopErrors,[],'Reload must not leave uncaught context invalidation errors');
+ assert.deepEqual(isolatedErrors,[],'The isolated content-script world must also have no unhandled rejections');
  console.log(JSON.stringify({result:'passed',freeTextFitFeedbackSaved:true,optionalCategoryDoesNotAutosave:true,saveNotesWhileAIIsRunning:true,notesComposerClearsAfterSaving:true,fullNotesReachAI:true,notesSurvivePanelReload:true,unchangedNotesReuseCache:true,reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

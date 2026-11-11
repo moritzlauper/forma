@@ -9,8 +9,8 @@ test('Fit assessment requests schema-constrained JSON from both providers',async
  const previous=globalThis.fetch;let local=false;
  globalThis.fetch=async(_url,init)=>{
   const body=JSON.parse(String(init?.body));
-  if(local){assert.deepEqual(body.format,reviewSchema);assert.equal(body.options.num_predict,3000);}
-  else{assert.deepEqual(body.output_config.format,{type:'json_schema',schema:reviewSchema});assert.equal(body.max_tokens,3000);}
+  if(local){assert.deepEqual(body.format,reviewSchema);assert.equal(body.options.num_predict,4000);}
+  else{assert.deepEqual(body.output_config.format,{type:'json_schema',schema:reviewSchema});assert.equal(body.max_tokens,4000);}
   const text=JSON.stringify({size:null,summary:'Insufficient evidence',reasons:[],limitations:[]});
   return new Response(JSON.stringify(local?{done_reason:'stop',message:{content:text}}:{stop_reason:'end_turn',content:[{type:'text',text}]}));
  };
@@ -54,3 +54,13 @@ test('Farfetch file-download error retries with the already scraped table and no
 test('Raw personal tolerances reach AI without basic-field extraction or fabricated measurements',()=>{const words='waist 46cm bei hosen sind mir gerade noch knapp okay, lieber bisschen grösser, darunter lieber nicht';const empty:Profile={mode:'body',name:'My fit',category:'trousers',fit:'relaxed',measures:{}};const trousers:Product={...product,category:'trousers',sizes:[{label:'34',available:true,measures:{waist:46}},{label:'36',available:true,measures:{waist:48.5}}]};const input=inputForReview(page,trousers,empty,[],words);assert.equal(input.profile.description,words);assert.deepEqual(input.profile.measures,{});assert.equal(input.profile.context,undefined);assert.equal(input.decision.canSelectSize,true);assert.equal(inputForReview(page,trousers,empty,[]).decision.canSelectSize,false);});
 
 test('Broad estimates reach AI separately from known measurements, including fixed estimates',()=>{const input=inputForReview(page,product,{...profile,measures:{chest:{value:102,uncertainty:12,estimated:true,locked:true},shoulder:{value:46,uncertainty:1,estimated:false}}},[]);assert.equal(input.profile.measures.chest,undefined);assert.deepEqual(input.profile.estimates.chest,{value:102,uncertainty:12,estimated:true,locked:true});assert.equal(input.profile.measures.shoulder?.value,46);assert.equal(input.profile.estimates.shoulder,undefined);});
+
+test('Output truncation retries once with a larger budget and the same evidence',async()=>{
+ const old=globalThis.fetch,bodies:any[]=[];let reservations=0;
+ globalThis.fetch=async(_u,init)=>{bodies.push(JSON.parse(String(init?.body)));return new Response(JSON.stringify({stop_reason:bodies.length===1?'max_tokens':'end_turn',content:[{type:'text',text:JSON.stringify({size:null,summary:'Completed assessment',reasons:[],limitations:[]})}]}));};
+ try{await requestReview(inputForReview(page,product,profile,[]),'anthropic','test','fake',async()=>{reservations++;return true;});assert.equal(bodies.length,2);assert.equal(reservations,1);assert.ok(bodies[1].max_tokens>bodies[0].max_tokens);assert.deepEqual(bodies[1].messages,bodies[0].messages);}finally{globalThis.fetch=old;}
+});
+test('Repeated truncation stops and a denied retry budget makes no extra request',async()=>{
+ const old=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'max_tokens',content:[]}));};
+ try{const input=inputForReview(page,product,profile,[]);await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>false),/limit prevents/);assert.equal(calls,1);calls=0;await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>true),/cut off/);assert.equal(calls,2);}finally{globalThis.fetch=old;}
+});

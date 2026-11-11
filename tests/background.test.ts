@@ -17,18 +17,18 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   // an explicit Refresh can retry, within the same request budget.
   msg.name='Another hoodie';
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'max_tokens',content:[{type:'text',text:'{"summary":"unfinished'}]}));};
-  const broken=await send();assert.match(broken.result.message,/cut off/);assert.equal(calls,2);
-  await send();assert.equal(calls,2);assert.equal(session['page:1'].assessment.status,'error');
+  const broken=await send();assert.match(broken.result.message,/cut off/);assert.equal(calls,3);
+  await send();assert.equal(calls,3);assert.equal(session['page:1'].assessment.status,'error');
   assert.equal(Object.keys(local.fitCache as object).length,1);
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({size:null,summary:'Complete assessment',reasons:[],limitations:[]})}]}));};
   const retry=()=>new Promise<any>(resolve=>listener({...msg,retry:true},{tab:{id:1},url:'https://example.test/hoodie'},resolve));
-  const fixed=await retry();assert.equal(calls,3);assert.equal(local.aiCount,3);assert.equal(fixed.result.message,'Complete assessment');
-  await retry();assert.equal(calls,3);
+  const fixed=await retry();assert.equal(calls,4);assert.equal(local.aiCount,4);assert.equal(fixed.result.message,'Complete assessment');
+  await retry();assert.equal(calls,4);
   local.settings={...(local.settings as object),limit:100,limitVersion:1};local.aiCount=100;msg.name='Budget-limited hoodie';
-  await send();assert.equal(session['page:1'].assessment.code,'request_limit');assert.equal(calls,3);
+  await send();assert.equal(session['page:1'].assessment.code,'request_limit');assert.equal(calls,4);
   const oldSettings=local.settings;local.settings={...(oldSettings as object),limit:200};
   await storageListener({settings:{oldValue:oldSettings,newValue:local.settings}},'local');
-  await send();assert.equal(calls,4);assert.equal(local.aiCount,101);assert.equal(session['page:1'].assessment.status,'ready');
+  await send();assert.equal(calls,5);assert.equal(local.aiCount,101);assert.equal(session['page:1'].assessment.status,'ready');
   const manual=await new Promise<any>(resolve=>listener({type:'reserve-ai-request'},{url:'chrome-extension://test/index.html'},resolve));
   assert.equal(manual.allowed,true);assert.equal(local.aiCount,102);
   let pageReserved=false;listener({type:'reserve-ai-request'},{tab:{id:1},url:'https://example.test/'},()=>pageReserved=true);
@@ -40,23 +40,23 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   const firstPending=send();await startedPromise;
   local.settings={...(local.settings as object),limit:300};await storageListener({settings:{newValue:local.settings}},'local');
   const secondPending=send();complete();await Promise.all([firstPending,secondPending]);
-  assert.equal(calls,5);assert.equal(local.aiCount,103);
+  assert.equal(calls,6);assert.equal(local.aiCount,103);
   // Local negatives do not spend tokens. The user's manual activation bypasses
   // classification, but shares normal budget, cache and assessment handling.
   const missed={...msg,name:'Archive 04',detection:{kind:'unknown',name:'Archive 04',category:null,signals:['price']}};
   const skipped=await new Promise<any>(resolve=>listener(missed,{tab:{id:1},url:'https://example.test/archive'},resolve));
-  assert.equal(skipped.skipped,true);assert.equal(calls,5);assert.equal(local.aiCount,103);assert.equal(session['page:1'].assessment,undefined);
+  assert.equal(skipped.skipped,true);assert.equal(calls,6);assert.equal(local.aiCount,103);assert.equal(session['page:1'].assessment,undefined);
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Finished once',reasons:[],limitations:[]})}]}));};
   const forced=await new Promise<any>(resolve=>listener({...missed,manual:true},{tab:{id:1},url:'https://example.test/archive'},resolve));
-  assert.equal(forced.result.message,'Finished once');assert.equal(calls,6);assert.equal(local.aiCount,104);assert.equal(session['page:1'].manual,true);
+  assert.equal(forced.result.message,'Finished once');assert.equal(calls,7);assert.equal(local.aiCount,104);assert.equal(session['page:1'].manual,true);
   const fresh=()=>new Promise<any>(resolve=>listener({...missed,manual:true,fresh:true,retry:true},{tab:{id:1},url:'https://example.test/archive'},resolve));
-  const refreshed=await fresh();assert.equal(calls,7);assert.equal(local.aiCount,105);assert.equal(refreshed.result.cached,false);
+  const refreshed=await fresh();assert.equal(calls,8);assert.equal(local.aiCount,105);assert.equal(refreshed.result.cached,false);
   // Several explicit refreshes while the request is active share that request.
   let freshStarted!:()=>void;const freshStart=new Promise<void>(resolve=>freshStarted=resolve);
   let finishFresh!:()=>void;const freshResponse=new Promise<Response>(resolve=>finishFresh=()=>resolve(new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Fresh assessment',reasons:[],limitations:[]})}]}))));
   globalThis.fetch=async()=>{calls++;freshStarted();return freshResponse;};
   const a=fresh();await freshStart;const b=fresh();await new Promise(resolve=>setTimeout(resolve,10));finishFresh();
-  const answers=await Promise.all([a,b]);assert.equal(calls,8);assert.equal(local.aiCount,106);assert.ok(answers.some(v=>v.result?.cached===false));assert.ok(answers.every(v=>v.stale||v.result?.cached===false));
+  const answers=await Promise.all([a,b]);assert.equal(calls,9);assert.equal(local.aiCount,106);assert.ok(answers.some(v=>v.result?.cached===false));assert.ok(answers.every(v=>v.stale||v.result?.cached===false));
   const beforeBookmark=calls;
   const saved=await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'good'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));
   assert.equal(saved.ok,true);assert.equal(calls,beforeBookmark);assert.equal((local.goodFits as any[])[0].url,'https://example.test/archive');assert.equal(session['fit-editor:1'].kind,'good');
@@ -64,6 +64,6 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'good'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));assert.equal((local.goodFits as any[])[0].size,'L');assert.equal((local.goodFits as any[])[0].reason,'Great sleeves');
   await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'bad'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));assert.equal(session['fit-editor:1'].kind,'bad');assert.equal(calls,beforeBookmark);
   await new Promise<any>(resolve=>listener({type:'page-error',name:'Unreadable product'},{tab:{id:1},url:'https://example.test/error'},resolve));
-  assert.equal(session['page:1'].scan.status,'error');assert.equal(calls,8);
+  assert.equal(session['page:1'].scan.status,'error');assert.equal(calls,9);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

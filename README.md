@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.1.0.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.2.0.
 
 ## Install
 
@@ -18,11 +18,13 @@ If a page is missed, choose **Analyse this page**. This requests access to that 
 
 FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. FORMA never selects sizes or modifies the cart.
 
+Opening the panel reconnects to the active, already-permitted shop and starts a missing reader, including in tabs left open across extension updates. Missing website access, scan failures and interrupted assessments have explicit statuses instead of an indefinite “Waiting for AI”. **Refresh** reconnects, rereads sizing and requests a fresh AI assessment, bypassing a completed cached answer. Repeated clicks during an active request share that request; automatic scans still use the cache.
+
 The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data, social preview metadata or the product gallery are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
 
 The panel shows the model, completion/cache status, image inclusion, reasons and limitations. Missing credentials, permission, exhausted request limits and API errors are shown explicitly. AI failures do not silently fall back to a local size suggestion. The AI can return no reliable size when evidence is insufficient.
 
-Fit assessments request schema-constrained JSON. Token-limit stops, refusals and malformed responses are checked before accepting a result; partial answers are never repaired into recommendations. Refresh retries failed assessments, while successful results continue to use the cache.
+Fit assessments request schema-constrained JSON. Token-limit stops, refusals and malformed responses are checked before accepting a result; partial answers are never repaired into recommendations. Refresh can retry failures or replace an earlier completed answer.
 
 FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated numeric body dimensions remain excluded to avoid false precision. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. Chat conversations outside the extension are not automatically imported as profile feedback.
 
@@ -32,13 +34,19 @@ One AI request evaluates all chart sizes together, with relative 0–100 ratings
 
 The panel shows every size's total and component scores plus a short explanation. The compact shop card shows the top three totals. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
 
-Use **Record actual fit** to record the size you tried. That experience takes priority for the same product. No specific product, brand, user measurement or size outcome is baked into the defaults. Cross-brand learning is not implemented.
+Use **Record actual fit** to record the size you tried. That experience takes priority for the same product. No specific product, brand, user measurement or size outcome is baked into the defaults.
+
+## Save clothes that fit
+
+**Save as a good fit** bookmarks the current product in one click. Optionally expand its details to record the size you actually wear and what you like, in your own words. The extension does not assume that a shop's currently selected size is your worn size. **Your profile → Your good fits** lets you edit or remove saved items.
+
+Future assessments receive up to six relevant saved examples, including product descriptions and your reasons. Confirmed sizes with garment charts also provide comparable dimensions, with their original units and flat-width convention. An unsized bookmark teaches preferences without inventing a measurement anchor. Examples are selected by clothing category, prioritising the same type; the AI is instructed to distinguish T-shirt/hoodie lengths and trouser length methods. This is personalisation from saved examples, not model retraining or guaranteed cross-brand fit. Up to 50 items are stored locally; existing profile-only exports do not include this collection.
 
 Optional measurements and manual charts remain available. Use semicolon/tab-separated columns such as `Size;Chest;Sleeve;Length`. Explicitly specify body/garment measurements, units and full/half circumferences. Reference garments need compatible measurement protocols.
 
 ## Cost and privacy
 
-Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, up to two product photo URLs, the saved fit description, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
+Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
 
 Keys are remembered in trusted extension-local storage on this device and excluded from profile exports. Browser storage is not an encrypted password vault. Settings includes **Forget API key**. No key is embedded in page scripts or source.
 
@@ -52,13 +60,15 @@ The tabs permission lets the panel identify the active shop URL. Page content re
 
 ## Supported detection and limitations
 
-Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
+Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. “Waist across front” is recognised as a flat garment width. Generic trouser LENGTH remains garment length, never an invented inseam; it can support a relative coverage score with uncertain measurement endpoints. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
 
 Size-guide discovery supports recognised in-page tabs, buttons and disclosures; it does not navigate to separate guide pages. General screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
 
 ## Verification
 
-78 automated tests cover local product-page recognition, skipping unrelated pages without AI calls, manual activation and navigation reset, uncapped budgets, unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was previously tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome permission/setup flow still needs live end-to-end verification.
+91 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
+
+The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
 
 ## References
 

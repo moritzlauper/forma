@@ -12,7 +12,7 @@ export function detect(page:Page):{product:Product|null;reason:string}{
   if(!unit){reason='The chart does not specify cm or inches.';continue;}
   if((/\bcm\b|centimet/.test(context))&&/\binches\b|\binch\b|\bzoll\b/.test(context)){reason='This chart mixes units. Select one unit in the shop.';continue;}
   const body=/body measurements|body size|körperma|koerperma|to fit (?:chest|waist)/.test(context);
-  const flat=/pit.to.pit|half chest|half waist|half hip|laid flat|measured flat|flach gemessen|halbe.*weite/.test(context);
+  const flat=/pit.to.pit|half chest|half waist|half hip|laid flat|measured flat|flach gemessen|halbe.*weite|(?:waist|chest|hip|bust)\s+(?:measured\s+)?across\s+(?:the\s+)?front|across\s+(?:the\s+)?front\s+of\s+(?:the\s+)?(?:waist|chest|hip|bust)/.test(context);
   const full=/circumference|umfang/.test(context);
   const garment=/garment measurements|product measurements|kleidungs.*ma/.test(context)||flat;
   if((body&&garment)||(flat&&full)||(!body&&!garment)||(garment&&!flat&&!full)){reason='The chart does not clearly distinguish body sizes, garment widths and circumferences.';continue;}

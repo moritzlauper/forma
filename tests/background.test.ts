@@ -49,5 +49,15 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Finished once',reasons:[],limitations:[]})}]}));};
   const forced=await new Promise<any>(resolve=>listener({...missed,manual:true},{tab:{id:1},url:'https://example.test/archive'},resolve));
   assert.equal(forced.result.message,'Finished once');assert.equal(calls,6);assert.equal(local.aiCount,104);assert.equal(session['page:1'].manual,true);
+  const fresh=()=>new Promise<any>(resolve=>listener({...missed,manual:true,fresh:true,retry:true},{tab:{id:1},url:'https://example.test/archive'},resolve));
+  const refreshed=await fresh();assert.equal(calls,7);assert.equal(local.aiCount,105);assert.equal(refreshed.result.cached,false);
+  // Several explicit refreshes while the request is active share that request.
+  let freshStarted!:()=>void;const freshStart=new Promise<void>(resolve=>freshStarted=resolve);
+  let finishFresh!:()=>void;const freshResponse=new Promise<Response>(resolve=>finishFresh=()=>resolve(new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Fresh assessment',reasons:[],limitations:[]})}]}))));
+  globalThis.fetch=async()=>{calls++;freshStarted();return freshResponse;};
+  const a=fresh();await freshStart;const b=fresh();await new Promise(resolve=>setTimeout(resolve,10));finishFresh();
+  const answers=await Promise.all([a,b]);assert.equal(calls,8);assert.equal(local.aiCount,106);assert.ok(answers.some(v=>v.result?.cached===false));assert.ok(answers.every(v=>v.stale||v.result?.cached===false));
+  await new Promise<any>(resolve=>listener({type:'page-error',name:'Unreadable product'},{tab:{id:1},url:'https://example.test/error'},resolve));
+  assert.equal(session['page:1'].scan.status,'error');assert.equal(calls,8);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

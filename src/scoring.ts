@@ -19,7 +19,7 @@ export function scoreSizes(value:unknown,product:Product,eligibleSizes:string[],
   for(const k of scoreKeys)if(rating[k]!==null&&(typeof rating[k]!=='number'||!Number.isFinite(rating[k])||rating[k]!<0||rating[k]!>100))throw Error('The AI returned a score outside 0–100.');
   const scores={...rating};
   const width:Key=product.category==='trousers'?'waist':product.category==='shoes'?'foot':'chest';
-  const length:Key=product.category==='trousers'?'inseam':'length';
+  const length:Key=product.category==='trousers'&&size.measures.inseam!==undefined?'inseam':'length';
   // Missing garment dimensions cannot become invented numeric fit scores.
   if(size.measures[width]===undefined)scores.width=null;
   if(size.measures[length]===undefined)scores.length=null;

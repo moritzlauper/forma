@@ -17,3 +17,9 @@ test('Saving a good fit can reuse the scan without a network call, and retains i
  const scans=recordScan([],page,product);const [entry]=enrichGoodFits([{url:'https://shop.test/jeans',name:'Jeans',category:'trousers',product:null,size:'34',reason:'Roomy legs',savedAt:1}],scans);
  assert.equal(entry.product?.sizes[0].measures.waist,46);assert.equal(entry.size,'34');assert.equal(entry.reason,'Roomy legs');assert.equal(entry.charts?.length,1);
 });
+test('A later body table enriches an existing bookmark without erasing its actual fit feedback',()=>{
+ const original={url:page.url,name:page.name,category:'trousers' as const,product:null,charts:[{text:'EU;INT;UK\n50;L;40',context:''}],size:'L',reason:'Good length',savedAt:1};
+ const body={...product,measurementType:'body' as const,flat:false,sizes:[{label:'L',available:true,measures:{waist:[84,88] as [number,number]}}]};
+ const records=recordScan([],{...page,charts:[...original.charts,{text:'EU;INT;TAILLENUMFANG\n50;L;84\n50;L;88',context:'Körpermasse cm'}]},body,200);
+ const [updated]=enrichGoodFits([original],records);assert.equal(updated.charts?.length,2);assert.equal(updated.product?.measurementType,'body');assert.equal(updated.evidenceObservedAt,200);assert.equal(updated.size,'L');assert.equal(updated.reason,'Good length');
+});

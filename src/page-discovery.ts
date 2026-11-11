@@ -1,4 +1,4 @@
-import {isSizeChart} from './chart-shape';
+import {isSizeChart,hasMeasurementColumns} from './chart-shape';
 import type {Chart} from './detect';
 
 const excluded='nav,footer,header,[id*="recommend"],[class*="recommend"],[id*="related"],[class*="related"]';
@@ -57,7 +57,22 @@ export function findSizeGuide(doc:Document,attempted:Set<HTMLElement>=new Set())
  })||null;
 }
 export async function discoverCharts(doc:Document,attempted:Set<HTMLElement>,wait=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))):Promise<Chart[]>{
- let charts=collectCharts(doc);if(charts.length)return charts;
+ const complete=async(initial:Chart[])=>{
+  let all=initial;
+  const collect=()=>{for(const chart of collectCharts(doc)){const index=all.findIndex(c=>c.text===chart.text);if(index<0)all.push(chart);else all[index]=chart;}};
+  // Read the entire guide, not only the conversion table rendered first.
+  // Most shops keep off-screen rows in the DOM. Only scroll a modal when it
+  // currently exposes conversions alone and may load measurements below.
+  if(!all.some(c=>hasMeasurementColumns(c.text))){
+   const modals=Array.from(doc.querySelectorAll<HTMLElement>('dialog[open],[role="dialog"],[aria-modal="true"]')).filter(visible);
+   for(const modal of modals.slice(0,1)){
+    const scrollers=[modal,...Array.from(modal.querySelectorAll<HTMLElement>('*'))].filter(e=>e.clientHeight>100&&e.scrollHeight>e.clientHeight+50).slice(0,2);
+    for(const scroll of scrollers){const top=scroll.scrollTop;try{for(let i=0;i<8&&scroll.scrollTop<scroll.scrollHeight-scroll.clientHeight;i++){const old=scroll.scrollTop;scroll.scrollTop=Math.min(scroll.scrollHeight-scroll.clientHeight,old+scroll.clientHeight*.85);if(scroll.scrollTop===old)break;await wait(150);collect();}}finally{scroll.scrollTop=top;}}
+   }
+  }
+  return all;
+ };
+ let charts=collectCharts(doc);if(charts.length)return complete(charts);
  while(attempted.size<3){
  const control=findSizeGuide(doc,attempted);if(!control)return charts;
  attempted.add(control);
@@ -65,13 +80,13 @@ export async function discoverCharts(doc:Document,attempted:Set<HTMLElement>,wai
  if(control.tagName==='SUMMARY'&&control.parentElement?.tagName==='DETAILS')(control.parentElement as HTMLDetailsElement).open=true;
  else control.click();
  // Lazy-loaded guides can arrive after the click. Wait before sending to AI.
- for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return charts;}
+ for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return complete(charts);}
  // A server-rendered button can exist before its click handler is hydrated.
  // Retry once only when the click had no observable effect. Never toggle an
  // open dialog/accordion closed merely because parsing failed.
  if(doc.body.textContent===before&&!doc.querySelector('dialog[open],[role="dialog"],[aria-modal="true"]')&&control.getAttribute('aria-expanded')!=='true'&&control.getAttribute('aria-selected')!=='true'&&control.tagName!=='SUMMARY'){
   control.click();
-  for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return charts;}
+  for(let i=0;i<8;i++){await wait(250);charts=collectCharts(doc);if(charts.length)return complete(charts);}
  }
  }
  return charts;

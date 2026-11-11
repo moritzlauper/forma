@@ -12,7 +12,7 @@ const reserveRequest=createRequestBudget(chrome.storage.local);
 const revisions=new Map<number,number>();
 let scanQueue:Promise<unknown>=Promise.resolve();
 function saveScan(page:Page,product:Product|null,source:ScanRecord['measurements'][number]['source']):Promise<ScanRecord[]>{
- const job=scanQueue.then(async()=>{const saved=(await chrome.storage.local.get('scanLibrary')).scanLibrary;const previous=Array.isArray(saved)?saved as ScanRecord[]:[];const next=recordScan(previous,page,product,Date.now(),source);if(next!==previous)await chrome.storage.local.set({scanLibrary:next});return next;});
+ const job=scanQueue.then(async()=>{const saved=(await chrome.storage.local.get('scanLibrary')).scanLibrary;const previous=Array.isArray(saved)?saved as ScanRecord[]:[];const next=recordScan(previous,page,product,Date.now(),source);if(next!==previous)await chrome.storage.local.set({scanLibrary:next});const savedFits=(await chrome.storage.local.get('goodFits')).goodFits;if(Array.isArray(savedFits)){const enriched=enrichGoodFits(savedFits,next);if(JSON.stringify(enriched)!==JSON.stringify(savedFits))await chrome.storage.local.set({goodFits:enriched});}return next;});
  scanQueue=job.catch(()=>{});return job;
 }
 chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
@@ -57,7 +57,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v11|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v12|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);

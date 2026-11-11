@@ -7,6 +7,7 @@ import {detect} from '../src/detect';
 import {inputForReview,validateReview} from '../src/assessment';
 import type {Profile} from '../src/fit';
 import {understand} from '../src/profile-text';
+import {measurementTable} from '../src/chart-shape';
 const rows=[['EU','INT','FR','IT','UK','JEANS'],['40','XXS','40','40','30','26'],['50','L','50','50','40','34']];
 const conversion=rows.map(row=>row.join(';')).join('\n');
 function doc(html:string){const {document}=parseHTML('<html><body>'+html+'</body></html>');Object.defineProperty(document,'URL',{value:'https://shop.test/shorts'});return document as unknown as Document;}
@@ -62,4 +63,17 @@ test('A server-rendered guide is retried after hydration when the first click di
  const document=doc('<main><button type="button">Grössenberater öffnen</button></main>');let clicks=0,waits=0;
  document.querySelector('button')!.addEventListener('click',()=>{clicks++;if(clicks===2)document.body.insertAdjacentHTML('beforeend','<div role="dialog"><table>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table></div>');});
  assert.equal((await discoverCharts(document,new Set(),async()=>{waits++;})).length,1);assert.equal(clicks,2);assert.ok(waits>=9);
+});
+test('The lower body-measurement table is collected alongside conversions and repeated INT labels become ranges',async()=>{
+ const body='EU;INT;TAILLENUMFANG;HÜFTUMFANG;BEINLÄNGE AN DER INNENSEITE\n40;XXS;58.5;82.5;79.75\n40;XXS;61;84;80\n42;XS;63.5;85.5;80.25\n42;XS;66;87;80.5';
+ const table=(text:string)=>'<table>'+text.split('\n').map(r=>'<tr>'+r.split(';').map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table>';
+ const document=doc('<main><h1>Denim Shorts</h1></main><div role="dialog">'+table(conversion)+'<h2>Körpermasse (cm)</h2>'+table(body)+'</div>');
+ const charts=await discoverCharts(document,new Set(),async()=>{});assert.equal(charts.length,2);
+ const found=detect({...page,charts});assert.equal(found.product?.measurementType,'body');assert.equal(found.product?.flat,false);
+ assert.deepEqual(found.product?.sizes[0].measures.waist,[58.5,61]);assert.deepEqual(found.product?.sizes[0].measures.hip,[82.5,84]);assert.equal(found.product?.sizes[0].label,'XXS');
+ // Missing units are retained as unresolved evidence, not silently dropped or
+ // misreported as a label-only conversion guide.
+ const unknown={text:body,context:'Körpermasse'};assert.equal(measurementTable(unknown)?.unit,null);
+ const input=inputForReview({...page,charts:[page.charts[0],unknown]},null,profile,[]);
+ const review=validateReview({size:null,summary:'Only a conversion guide',reasons:[],limitations:[]},null,input);assert.match(review.summary,/Body-size measurements read/);assert.doesNotMatch(review.summary,/only.*conversion/i);
 });

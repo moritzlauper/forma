@@ -74,7 +74,9 @@ Size-guide discovery supports recognised in-page tabs, buttons and disclosures; 
 
 ## Verification
 
-106 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
+The guide reader also collects lower body-measurement tables, including repeated international sizes as ranges. Published body references remain distinct from garment dimensions. Newly discovered tables enrich saved good fits without an extra AI request. After analysis, the main button becomes a disabled “✓ Analysed”; Refresh starts a new assessment.
+
+109 automated tests cover reconnection, status deadlines, numeric jeans sizing, fresh/cached requests, deduplication, saved good-fit examples, local recognition, budgets, measurement semantics and fit evidence. TypeScript and production build checks pass.
 
 The Chromium extension smoke test starts with an already-open product and no reader, verifies automatic reconnection and a lazy Sizing click, checks parsed measurements, fresh Refresh versus automatic cache reuse, and saves a good fit with size/reason which is used on another product. It also checks all-shop activation from an extension page, saving an EU shoe size, zero AI calls when bookmarking and persistent normalised scan evidence. It opens a German size-guide modal with CSS conversion rows, preserves a saved L fit without measurements, and recovers from a rejected image with accurate image status and request counting. It uses a synthetic shop fixture, a stub AI response and pre-granted permissions in an isolated test manifest. It does not validate physical fit or the live Chrome permission prompt. Run `npx playwright install chromium`, `npm run build`, then `npm run test:browser`; CI also runs it. A text assessment was previously tested against the live Anthropic API.
 

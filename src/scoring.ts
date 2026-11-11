@@ -22,7 +22,7 @@ export function scoreSizes(value:unknown,product:Product,eligibleSizes:string[],
   const length:Key=product.category==='trousers'&&size.measures.inseam!==undefined?'inseam':'length';
   // Missing garment dimensions cannot become invented numeric fit scores.
   if(size.measures[width]===undefined)scores.width=null;
-  if(size.measures[length]===undefined)scores.length=null;
+  if(size.measures[length]===undefined||product.measurementType==='body')scores.length=null;
   if(size.measures.sleeve===undefined||weights.sleeves===0)scores.sleeves=null;
   const applicable=scoreKeys.filter(k=>weights[k]>0);
   const assessed=applicable.filter(k=>scores[k]!==null);

@@ -2,6 +2,17 @@
 // before detection/AI sees them. No explicit "Size" heading is required.
 export const sizeLabel = /^(?:[2-6]?X{1,3}[SL]|[SML]|\d{2,3}(?:[.,]\d+)?)$/i;
 const sizeSystem=(label:string)=>/^(?:EU|EUR|INT|INTERNATIONAL|FR|IT|UK|US|JEANS)(?:\s+(?:SIZE|GRÖSSE|GRÖßE))?(?:\s*\([^)]*\))?$/i.test(label);
+export function hasMeasurementColumns(text:string){
+ const header=text.trim().split('\n')[0]?.split(';')||[];
+ return header.some(c=>sizeSystem(c)||/^(?:size|grösse|größe)$/i.test(c.trim()))&&header.some(c=>/waist|taille|hüft|hip|chest|brust|foot.length|fu(?:ss|ß)länge|beinlänge|inseam|sleeve|ärmel/i.test(c));
+}
+export function measurementTable(chart:{text:string;context:string}){
+ if(!hasMeasurementColumns(chart.text))return null;
+ const [columns,...rows]=chart.text.trim().split('\n').map(row=>row.split(';').map(c=>c.trim()));
+ const context=chart.text+' '+chart.context;
+ const cm=/\bcm\b|centimet/i.test(context),inch=/\binch(?:es)?\b|\bzoll\b/i.test(context);
+ return {columns,rows,subject:/körperma|koerperma|body measurements|body size/i.test(context)?'body':'unspecified',unit:cm&&!inch?'cm':inch&&!cm?'in':null};
+}
 export function sizeConversion(text:string){
  let rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
  if(rows.filter(row=>sizeSystem(row[0]||'')).length>=3&&rows.every(r=>r.length===rows[0].length))rows=rows[0].map((_,i)=>rows.map(r=>r[i]));
@@ -15,6 +26,7 @@ export function sizeConversion(text:string){
  return {kind:'size-conversion' as const,columns,rows:values.filter((r,i)=>values.findIndex(other=>JSON.stringify(other)===JSON.stringify(r))===i)};
 }
 export function isSizeChart(text:string):boolean {
+ if(hasMeasurementColumns(text))return true;
  if(sizeConversion(text))return true;
  const rows=text.trim().split('\n').map(row=>row.split(';').map(cell=>cell.trim()));
  if(rows.length<2)return false;

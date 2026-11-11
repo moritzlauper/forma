@@ -20,3 +20,9 @@ test('Unknown, duplicate, missing and out-of-range ratings are rejected',()=>{
 test('Scores stay null when every applicable factor is unknown',()=>{
  const scores=scoreSizes(ratings.map(s=>({...s,width:null,length:null,style:null,sleeves:null})),product,['A','B'],fitWeights(product,[]));assert.ok(scores.every(s=>s.overall===null&&s.assessed===0));
 });
+
+test('Body reference leg lengths are not scored as garment coverage',()=>{
+ const body:Product={name:'Shorts',category:'trousers',measurementType:'body',unit:'cm',flat:false,source:'https://shop.test',sizes:[{label:'L',available:true,measures:{waist:[84,88],inseam:[80,82]}}]};
+ const scored=scoreSizes([{size:'L',width:70,length:95,style:70,sleeves:null,reason:'Body size reference.'}],body,['L'],{width:3,length:3,style:2,sleeves:0});
+ assert.equal(scored[0].length,null);
+});

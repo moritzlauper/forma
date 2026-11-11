@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 0.2.1 preview.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 0.2.2 preview.
 
 ## Install
 
@@ -10,9 +10,9 @@ New installations start with an empty profile. Existing profiles and saved API k
 
 ## Everyday use
 
-Describe your fit preferences, add your API key and allow the AI connection in Settings. Connect a shop once, or explicitly enable all-site access. On supported product pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart. Open the shop's size guide if it is hidden in a dialog. FORMA never selects sizes or modifies the cart.
+Describe your fit preferences, add your API key and allow the AI connection in Settings. Connect a shop once, or explicitly enable all-site access. On supported product pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart. FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. FORMA never selects sizes or modifies the cart.
 
-The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data or the social preview image are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
+The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data, social preview metadata or the product gallery are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
 
 The panel shows the model, completion/cache status, image inclusion, reasons and limitations. Missing credentials, permission, exhausted request limits and API errors are shown explicitly. AI failures do not silently fall back to a local size suggestion. The AI can return no reliable size when evidence is insufficient.
 
@@ -36,13 +36,13 @@ The tabs permission lets the panel identify the active shop URL. Page content re
 
 ## Supported detection and limitations
 
-Local detection covers visible HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
+Local detection covers visible and closed-tab HTML/ARIA size tables with explicit units and clear measurement conventions, including common English/German names and transposed layouts. Conflicting charts are rejected; unknown sleeve protocols are excluded. Product photos require discoverable metadata or a qualifying gallery image, and publicly accessible image URLs. Images blocked by the shop can cause the provider request to fail.
 
-Automatic size-guide clicking, general screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
+Size-guide discovery supports recognised in-page tabs, buttons and disclosures; it does not navigate to separate guide pages. General screenshot/OCR capture and calibrated 3D try-on are not implemented. AI reasoning is not a physical garment simulation. Estimated body dimensions remain uncertain; actual drape, hem tension and sleeve fit cannot be guaranteed. Bras, children's sizes and specialist garments need additional support.
 
 ## Verification
 
-37 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
+46 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
 
 ## References
 

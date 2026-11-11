@@ -6,7 +6,7 @@ export function detect(page:Page):{product:Product|null;reason:string}{
  const name=page.name.toLowerCase();
  const category:Category|null=/hoodie|t-shirt|shirt|sweater|pullover|tee|hemd/.test(name)?'top':/jacket|coat|jacke|mantel/.test(name)?'jacket':/jeans|trousers|pants|hose|shorts/.test(name)?'trousers':/dress|overall|kleid|jumpsuit/.test(name)?'dress':/shoes|sneaker|boots|schuhe/.test(name)?'shoes':null;
  if(!category)return {product:null,reason:'Product category not clear yet.'};
- const candidates:Product[]=[];let reason='No readable size chart yet. Open the shop’s size guide; FORMA will read it automatically.';
+ const candidates:Product[]=[];let reason='FORMA could not read a size chart after checking this page’s size guide.';
  for(const chart of page.charts){
   const context=(chart.text+'\n'+chart.context).toLowerCase();const unit=/\bcm\b|centimet/.test(context)?'cm':/\binches\b|\binch\b|\bzoll\b/.test(context)?'in':null;
   if(!unit){reason='The chart does not specify cm or inches.';continue;}

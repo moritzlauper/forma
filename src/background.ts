@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[]);
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v3|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v4|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     if(msg.retry===true&&failed.delete(digest))flights.delete(digest);
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model}}});
     let job=flights.get(digest);const reused=!!job;

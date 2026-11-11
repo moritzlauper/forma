@@ -39,3 +39,11 @@ test('Absent data and interrupted AI never display an endless Waiting for AI sta
 });
 
 test('Reopening a panel with a live reader only pings and never requests another scan',async()=>{const b=browser({reader:true});const connect=createPageConnector(b.api);for(let i=0;i<3;i++)await connect(tab);assert.ok(b.messages.every(m=>m.type==='forma-ping'));assert.equal(b.injections,0);});
+
+test('A reader recovered during a failed attachment is detected without another scan',async()=>{
+ const b=browser({broken:true});let pings=0;b.api.tabs.sendMessage=async()=>{if(++pings===1)throw Error('not ready');return {protocol:READER_PROTOCOL,url:tab.url};};
+ assert.equal((await createPageConnector(b.api)(tab)).status,'connected');assert.equal(pings,2);
+});
+test('A ready assessment is not replaced by an unrelated connection status',()=>{
+ assert.equal(idlePageStatus({status:'error',message:'Connection failed',at:1},undefined,{status:'ready',model:'test',review:{size:'L',summary:'Saved result',reasons:[],limitations:[]}}).title,'Assessment completed');
+});

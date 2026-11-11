@@ -64,3 +64,19 @@ test('Repeated truncation stops and a denied retry budget makes no extra request
  const old=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({stop_reason:'max_tokens',content:[]}));};
  try{const input=inputForReview(page,product,profile,[]);await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>false),/limit prevents/);assert.equal(calls,1);calls=0;await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>true),/cut off/);assert.equal(calls,2);}finally{globalThis.fetch=old;}
 });
+
+test('A poor overall garment match cannot recommend the only available size',()=>{
+ const one={...product,sizes:[{...product.sizes[0],measures:{...product.sizes[0].measures,length:66}}]};const input=inputForReview(page,one,profile,[],'Loose fit, adequate coverage.');
+ const review=validateReview({size:one.sizes[0].label,summary:'Only size',overallFit:{label:'Poor fit',reason:'The cut is too short for your desired coverage.'},checks:{width:'Roomy',length:'Too short',sleeves:'Unknown'},ratings:input.decision.scoring.sizes.map(s=>({size:s.label,width:90,length:25,style:30,sleeves:null,reason:'Too short despite adequate chest room.'})),reasons:[],limitations:[]},one,input);
+ assert.equal(review.size,null);assert.equal(review.overallFit?.label,'Very poor fit');assert.match(review.summary,/Too short/i);
+});
+
+test('Chest room uses actual arithmetic and keeps shoulder fit separate',()=>{
+ const tee:Product={...product,name:'T-shirt',sizes:[{label:'M',available:true,measures:{chest:56,length:70}},{label:'L',available:true,measures:{chest:58.5,length:72}}]};
+ const user:Profile={...profile,measures:{chest:{value:108,uncertainty:0}}};
+ const input=inputForReview(page,tee,user,[]);
+ assert.deepEqual(input.decision.chestRoom.map(s=>s.easeAtCentralValue),[4,9]);assert.deepEqual(input.decision.chestRoom[0].easeRange,[4,4]);assert.match(input.decision.chestRoom[0].shoulderFit,/Not established/);
+ const estimated=inputForReview(page,tee,{...user,measures:{chest:{value:108,uncertainty:12,estimated:true}}},[]);
+ assert.deepEqual(estimated.decision.chestRoom[0].easeRange,[-8,16]);assert.equal(estimated.decision.chestRoom[0].bodySource,'estimate');
+ assert.deepEqual(inputForReview(page,{...tee,measurementType:'body',flat:false},user,[]).decision.chestRoom,[]);
+});

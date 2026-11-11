@@ -45,3 +45,16 @@ export function sizeEvidence(product:Product|null,profile:Profile,description:st
  const anchored=!!measures[primary]&&priorities.every(k=>!!measures[k]&&product?.sizes.every(s=>s.measures[k]!==undefined));
  return {canSelectSize:blockers.length===0,eligibleSizes:blockers.length?[]:eligibleSizes,priorities,blockers,unknowns,fittedSizes:fitted,basis:anchored&&!!product?'comparison' as const:'estimate' as const,weights:fitWeights(product,priorities)};
 }
+
+// Arithmetic evidence, not a fit guarantee. Preserve the full body uncertainty.
+export function chestRoom(profile:Profile,product:Product|null){
+ const body=profile.measures.chest;
+ if(profile.mode!=='body'||!body||!product||product.measurementType!=='garment'||!['top','jacket','dress'].includes(product.category))return [];
+ return product.sizes.flatMap(size=>{
+  if(size.measures.chest===undefined)return [];
+  const garment=normalise(size.measures.chest,product.unit,product.flat,'chest');
+  const range:[number,number]=[body.value-body.uncertainty,body.value+body.uncertainty];
+  const round=(n:number)=>Math.round(n*10)/10;
+  return [{size:size.label,unit:'cm',bodySource:body.estimated?'estimate':'user supplied',bodyRange:range,garmentCircumference:garment,easeRange:[round(garment[0]-range[1]),round(garment[1]-range[0])],easeAtCentralValue:round((garment[0]+garment[1])/2-body.value),shoulderFit:'Not established by chest room'}];
+ });
+}

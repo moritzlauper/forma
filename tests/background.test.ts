@@ -12,6 +12,8 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   const msg={type:'page',name:'Cotton hoodie',text:'Cotton hoodie, box fit',detection:{kind:'clothing',name:'Cotton hoodie',category:'top',signals:['product data']},charts:[{text:'Size;Chest\nM;60',context:'Garment measurements cm measured flat'}]};
   const send=()=>new Promise<any>(resolve=>listener(msg,{tab:{id:1},url:'https://example.test/hoodie'},resolve));
   const first=await send();assert.equal(calls,1);assert.equal(first.result.model,'claude-haiku-5-5');assert.equal(session['page:1'].assessment.status,'ready');assert.equal(local.aiCount,1);
+  const ready=session['page:1'];
+  for(const type of ['page-progress','page-error']){await new Promise(resolve=>listener({type,name:'Cotton hoodie'},{tab:{id:1},url:'https://example.test/hoodie'},resolve));assert.deepEqual(session['page:1'].assessment,ready.assessment);assert.deepEqual(session['page:1'].charts,ready.charts);}
   const repeated=await send();assert.equal(calls,1);assert.equal(local.aiCount,1);assert.equal(repeated.result.cached,true);
   // A different product fails once. DOM updates must not spend more tokens;
   // an explicit Refresh can retry, within the same request budget.

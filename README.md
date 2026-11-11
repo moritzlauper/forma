@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.6.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.7.
 
 **Free Chrome extension.** Compare clothing sizes, understand the reasons behind an estimate, and save what fits. Optional Anthropic API usage costs extra; local Ollama and a No AI measurement-comparison mode are also available.
 
@@ -153,3 +153,14 @@ A lifecycle handler disposes a disconnected reader and handles late “Extension
 Validation: 142 automated tests, TypeScript/build checks, isolated Chromium tests with simulated AI, and narrow-panel/popup visual inspection. No live model fit prediction was verified.
 
 The popup summary and detailed reasoning are collapsible. Drag the FORMA header to reposition it, or focus it and use arrow keys. Position persists while using the page; viewport and content-size changes keep the card reachable.
+
+### 1.3.7 updates
+
+Fit ratings now have eight bands: Very poor, Poor, Mixed, Fair, Mostly good, Good, Very good and Excellent fit. Each size in the popup includes its existing short explanation. The panel uses the same labels. Missing evidence and excluded sizes remain distinct. Category labels can be displayed from existing assessment scores without an AI call. The new overall assessment and updated profile take effect on the next assessment.
+
+
+The main verdict is now **Overall fit**: the garment's match to your preferences in a suitable available size, not a reward for winning a size ranking. Single-size listings use the same assessment. Poor overall matches do not receive a size recommendation. An unknown fit is distinct from a poor fit. Individual size comparisons remain collapsed when there are alternatives.
+
+**Build & proportions** is editable alongside usual sizes. Self-described broad shoulders/chest informs shoulder comfort, layering and coverage without inventing new measurements. Measurements now sit immediately after profile basics. Additive `forma-profile-update` imports can update this description without replacing measurements, fit notes or saved clothing. Existing completed assessments survive a same-page rescan failure, with a separate connection notice.
+
+Poor width, length or sleeve ratings cap the aggregate rating; they cannot be compensated for by another factor. A poor best candidate is not recommended. Chest-ease arithmetic includes the supplied measurement uncertainty and does not imply shoulder fit. Existing preference/concern fields are consolidated into editable fit notes, preserving their text.

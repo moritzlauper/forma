@@ -44,7 +44,11 @@ export function scoreEvidence(value:unknown,evidence:ScoreEvidence,eligibleSizes
   for(const k of scoreKeys)if(!size.factors.includes(k)||weights[k]===0||(k==='length'&&evidence.body))scores[k]=null;
   const applicable=scoreKeys.filter(k=>weights[k]>0),assessed=applicable.filter(k=>scores[k]!==null);
   const total=assessed.reduce((sum,k)=>sum+weights[k],0),eligible=eligibleSizes.includes(size.label);
-  return {...scores,reason:eligible?scores.reason:'Excluded by recorded fit feedback or missing sizing evidence.',overall:eligible&&total?Math.round(assessed.reduce((sum,k)=>sum+scores[k]!*weights[k],0)/total):null,assessed:assessed.length,applicable:applicable.length,eligible};
+  const weighted=eligible&&total?Math.round(assessed.reduce((sum,k)=>sum+scores[k]!*weights[k],0)/total):null;
+  // A clearly poor essential dimension cannot be averaged into a good fit.
+  const critical=(['width','length','sleeves'] as const).flatMap(k=>scores[k]!==null&&scores[k]!<60?[scores[k]!]:[]);
+  const overall=weighted===null?null:Math.min(weighted,...critical);
+  return {...scores,reason:eligible?scores.reason:'Excluded by recorded fit feedback or missing sizing evidence.',overall,assessed:assessed.length,applicable:applicable.length,eligible};
  });
  return scored.sort((a,b)=>(b.overall??-1)-(a.overall??-1)||(b.length??-1)-(a.length??-1));
 }

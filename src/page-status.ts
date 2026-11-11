@@ -2,6 +2,7 @@ import type {Connection} from './page-connection';
 import type {Assessment} from './assessment';
 export type ScanState={status:'reading'|'error';at:number;error?:string};
 export function idlePageStatus(connection:Connection,scan:ScanState|undefined,assessment:Assessment|undefined,now=Date.now()){
+ if(assessment?.status==='ready')return {title:'Assessment completed',text:'Your last completed assessment is available.'};
  if(connection.status==='permission')return {title:'Connect this shop',text:connection.message};
  if(connection.status==='unsupported')return {title:'Open a product page',text:connection.message};
  if(connection.status==='error')return {title:'Page connection failed',text:connection.message};

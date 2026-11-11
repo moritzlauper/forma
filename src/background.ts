@@ -66,7 +66,10 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   page.detection=msg.detection;page.manual=msg.manual===true;
   if(msg.type!=='page'){
    const error=msg.type==='page-error';
-   await chrome.storage.session.set({['page:'+tab]:{...page,product:null,result:null,reason:'',scan:{status:error?'error':'reading',at:Date.now(),error:error?'Could not read this page. Press Refresh to reconnect.':undefined}}});
+   const previous=(await chrome.storage.session.get('page:'+tab))['page:'+tab] as (Page&{assessment?:Assessment})|undefined;
+   if(revisions.get(tab)!==revision){reply({stale:true});return;}
+   const retained=previous?.url===page.url&&previous?.assessment?.status==='ready'?previous:null;
+   await chrome.storage.session.set({['page:'+tab]:{...(retained||{...page,product:null,result:null,reason:''}),scan:{status:error?'error':'reading',at:Date.now(),error:error?'Could not reread this page. Your last completed assessment is kept.':undefined}}});
    reply({accepted:true});return;
   }
   if(page.detection?.kind!=='clothing'&&!page.manual){
@@ -92,7 +95,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,withEstimates(migrateProfile(data.profile as Profile)),(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v18|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v19|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -121,7 +124,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   if(revisions.get(tab)!==revision){reply({url:page.url,stale:true});return;}
   await chrome.storage.session.set({['page:'+tab]:{...page,product,result,reason:found.reason,assessment}});
   const message=assessment?assessment.status==='ready'?assessment.review!.summary:assessment.error||'AI is reviewing your fit…':result?.message||found.reason;
-  reply({url:page.url,result:assessment?{message,ranked:[],status:assessment.status,size:assessment.review?.size,scores:assessment.review?.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible})),reasons:assessment.review?.reasons||[],basis:assessment.review?.basis,model:assessment.model,cached:assessment.cached}:result||{message,ranked:[]}});
+  reply({url:page.url,result:assessment?{message,ranked:[],status:assessment.status,overallFit:assessment.review?.overallFit,size:assessment.review?.size,scores:assessment.review?.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible,reason:s.reason})),reasons:assessment.review?.reasons||[],basis:assessment.review?.basis,model:assessment.model,cached:assessment.cached}:result||{message,ranked:[]}});
 
  })().catch(async()=>{
   if(revisions.get(tab)===revision)await chrome.storage.session.set({['page:'+tab]:{url:sender.url||'',name:String(msg.name||'').slice(0,200),text:'',charts:[],product:null,result:null,scan:{status:'error',at:Date.now(),error:'The assessment could not start. Press Refresh to reconnect.'}}}).catch(()=>{});

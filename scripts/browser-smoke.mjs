@@ -167,7 +167,7 @@ try{
  await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).waitFor({timeout:15000});
  const odessaInput=await worker.evaluate(()=>globalThis.testInput);
  await panel.getByText('Compare sizes',{exact:true}).waitFor();
- await panel.locator('.fit-score').filter({hasText:/Good fit|Very good fit/}).waitFor();
+ await panel.locator('.fit-score').filter({hasText:/Fair fit|Good fit|Mostly good fit|Very good fit|Excellent fit/}).waitFor();
  assert.doesNotMatch(await panel.locator('.fit-score').innerText(),/\/100/);
  const explanation=panel.locator('.verdict details');assert.equal(await explanation.getAttribute('open'),null);
  await explanation.locator('summary').click();assert.notEqual(await explanation.getAttribute('open'),null);await explanation.locator('summary').click();
@@ -188,6 +188,7 @@ try{
  assert.ok((await worker.evaluate(()=>chrome.scripting.getRegisteredContentScripts())).some(s=>s.id==='all-shops'));
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
  await panel.getByLabel('Usual shoe size · EU').fill('45');
+ await panel.getByLabel('Build & proportions').fill('Broad shoulders and chest relative to height.');
  await panel.getByRole('button',{name:'Save profile',exact:true}).click();
  await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
  // Notes saving must remain available while a real product request is pending.
@@ -217,6 +218,7 @@ try{
  await panel.getByRole('button',{name:'Update this item with saved notes',exact:true}).click();
  await panel.getByText('AI ASSESSMENT · COMPLETED',{exact:true}).waitFor({timeout:15000});
  assert.equal(await worker.evaluate(()=>globalThis.testInput.profile.description),notes);
+ assert.equal(await worker.evaluate(()=>globalThis.testInput.profile.context.bodyShape),'Broad shoulders and chest relative to height.');
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1);
  assert.equal(await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).count(),1);
  const reopeningRequests=await worker.evaluate(()=>globalThis.testRequests);
@@ -232,6 +234,17 @@ try{
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1,'Unchanged notes reuse the assessment');
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
  assert.deepEqual(errors,[]);
+
+ await panel.getByRole('button',{name:/03.*Settings/}).click();
+ await panel.getByText('Move your profile to another computer',{exact:true}).click();
+ const beforeImport=await worker.evaluate(async()=>(await chrome.storage.local.get(['profile','description','goodFits'])));
+ await panel.getByLabel('Import profile').setInputFiles({name:'profile-update.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({kind:'forma-profile-update',bodyShape:'Broad shoulders; comfortable chest room.',fitNotes:'Prefer wider upper-body cuts without excess length.'}))});
+ await panel.getByText('Profile updated. Your existing measurements, notes and saved fits are kept.',{exact:true}).waitFor();
+ const afterImport=await worker.evaluate(async()=>(await chrome.storage.local.get(['profile','description','goodFits'])));
+ assert.deepEqual(afterImport.profile.measures,beforeImport.profile.measures);assert.deepEqual(afterImport.goodFits,beforeImport.goodFits);assert.ok(afterImport.description.startsWith(beforeImport.description));assert.equal(afterImport.profile.context.bodyShape,'Broad shoulders; comfortable chest room.');
+ await panel.getByRole('button',{name:/02.*Your profile/}).click();
+ assert.equal(await panel.getByLabel('Build & proportions').inputValue(),'Broad shoulders; comfortable chest room.');
+ assert.equal(await panel.getByLabel('Fit preferences & concerns').count(),0);
  if(process.env.FORMA_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});}
  // Invalidate the real isolated extension while keeping its shop tab open.
  const shopErrors=[];shop.on('pageerror',error=>shopErrors.push(error.message));

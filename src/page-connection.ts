@@ -1,4 +1,4 @@
-export const READER_PROTOCOL='forma-reader-v9';
+export const READER_PROTOCOL='forma-reader-v10';
 export type Connection={status:'checking'|'connected'|'permission'|'unsupported'|'error';message:string;at:number};
 export function deadline<T>(work:Promise<T>,ms:number,message:string):Promise<T>{
  let timer:ReturnType<typeof setTimeout>;
@@ -35,7 +35,15 @@ export function createPageConnector(api:Pick<typeof chrome,'permissions'|'script
     const ack=await deadline(api.tabs.sendMessage(id,{type:'refresh',...options},{frameId:0}),timeout,'The page scan did not start. Press Refresh to reconnect.');
     if(!ack?.accepted)throw Error('The page scan did not start. Press Refresh to reconnect.');
     return result('connected','Reading product details and checking the size guide…');
-   }catch{return result('error','Could not connect to this page. Press Refresh to reconnect, or reload the shop page.');}
+   }catch{
+    // A competing attachment/navigation can finish while injection times out.
+    // Recheck transport once; do not issue another scan or AI request.
+    if(!options.force&&!options.retry&&!options.fresh){
+     const reader=await deadline(api.tabs.sendMessage(id,{type:'forma-ping'},{frameId:0}),timeout,'The page reader did not respond.').catch(()=>null);
+     if(reader?.protocol===READER_PROTOCOL&&(!reader.url||reader.url===tab.url))return result('connected','Connected. Showing the existing assessment.');
+    }
+    return result('error','Could not connect to this page. Press Refresh to reconnect, or reload the shop page.');
+   }
   })().finally(()=>pending.delete(key));pending.set(key,task);return task;
  };
 }

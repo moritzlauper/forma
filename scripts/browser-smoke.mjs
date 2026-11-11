@@ -22,9 +22,11 @@ try{
    const body=JSON.parse(options.body);const content=body.messages[0].content;
    const input=JSON.parse(Array.isArray(content)?content[0].text:content);
    globalThis.testInput=input;
-   if(input.product.name==='Odessa Jeans')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34',summary:'I would try 34 from the read chart and usual waist label.',checks:{width:'Published waist value is 46 cm; the width convention is uncertain.',length:'Published length is 107 cm, longer than 32 at 105 cm; endpoints unknown.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
+   const chartRatings=input.decision.scoring.sizes.map(s=>({size:s.label,width:s.label==='34'||s.label==='L'?80:50,length:70,style:65,sleeves:null,reason:'Synthetic fit score.'}));
+   if(globalThis.holdNext){globalThis.holdNext=false;globalThis.held=true;await new Promise(resolve=>globalThis.releaseHeld=resolve);}
+   if(input.product.name==='Odessa Jeans')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34',summary:'I would try 34 from the read chart and usual waist label.',checks:{width:'Published waist value is 46 cm; the width convention is uncertain.',length:'Published length is 107 cm, longer than 32 at 105 cm; endpoints unknown.',sleeves:'Not applicable.'},ratings:chartRatings,reasons:[],limitations:[]})}]}));
    if(input.product.name==='Model Jeans')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34 x 32',summary:'I would try W34 L32 using your usual waist label and the similarly tall model.',checks:{width:'W34 matches the usual waist label; loose is a cut description.',length:'The 186 cm model wears L32; this is a tentative length reference.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
-   if(input.product.name==='Body Guide Shorts')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:input.product.parsed?null:'L',summary:input.product.parsed?'Body guide captured.':'I would try L from the guide labels.',checks:{width:'Body waist range read.',length:'Body leg length, not shorts length.',sleeves:'Not applicable.'},ratings:[],reasons:[],limitations:[]})}]}));
+   if(input.product.name==='Body Guide Shorts')return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:input.product.parsed?null:'L',summary:input.product.parsed?'Body guide captured.':'I would try L from the guide labels.',checks:{width:'Body waist range read.',length:'Body leg length, not shorts length.',sleeves:'Not applicable.'},ratings:chartRatings,reasons:[],limitations:[]})}]}));
    if(input.product.name==='Denim Shorts'){
     globalThis.shortsRequests=(globalThis.shortsRequests||0)+1;
     if(input.product.images.length)return new Response(JSON.stringify({error:{type:'invalid_request_error',message:'Could not process image'}}),{status:400});
@@ -33,7 +35,7 @@ try{
    const sizes=input.product.parsed.sizes;
    return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:'34',summary:'Test assessment completed #'+globalThis.testRequests,checks:{width:'Flat waist width read.',length:'Generic garment length, not inseam.',sleeves:'Not applicable.'},ratings:sizes.map(s=>({size:s.label,width:s.label==='34'?90:60,length:s.label==='34'?85:60,style:70,sleeves:null,reason:'Synthetic test score.'})),reasons:[],limitations:['Synthetic test response.']})}]}));
   };
-  await chrome.storage.local.set({apiKey:'fake-test-key',settings:{mode:'anthropic',model:'claude-haiku-5-5',assessmentVersion:1,limit:100,limitVersion:1},profile:{mode:'body',category:'trousers',name:'Test',fit:'relaxed',measures:{},context:{height:180,weight:75,waistLabel:'',style:'',concerns:[]}}});
+  await chrome.storage.local.set({apiKey:'fake-test-key',settings:{mode:'anthropic',model:'claude-haiku-5-5',assessmentVersion:1,limit:100,limitVersion:1},profile:{mode:'body',category:'trousers',name:'Test',fit:'relaxed',measures:{},context:{height:180,weight:75,waistLabel:'',style:'Urban / Alternativeeeee',concerns:[]}}});
  });
  const chart='<table><tr><td></td><td>32</td><td>34</td><td>36</td></tr><tr><td>WAIST ACROSS FRONT (CM)</td><td>43.5</td><td>46</td><td>48.5</td></tr><tr><td>LENGTH (CM)</td><td>110</td><td>112</td><td>114</td></tr></table>';
  const html=`<html><body><main><h1>Director Paint-Splattered Jeans</h1><button id="sizing" type="button">Sizing</button><div id="chart"></div><p>CHF 226</p><button>Add to cart</button></main><script>window.guideClicks=0;document.getElementById('sizing').onclick=()=>{window.guideClicks++;document.getElementById('chart').innerHTML=${JSON.stringify(chart)};};</script></body></html>`;
@@ -75,10 +77,10 @@ try{
  const savedScan=await worker.evaluate(async()=> (await chrome.storage.local.get('scanLibrary')).scanLibrary.find(r=>r.url.endsWith('/director-jeans-grey')));
  assert.equal(savedScan.measurements.find(m=>m.size==='34'&&m.key==='waist').cm[0],92);
  await panel.getByText('Your good fit · optional details',{exact:true}).click();
- await panel.getByLabel('Size that actually fits you · optional').selectOption('34');
- await panel.getByLabel('What do you like? · optional').fill('Good full length and roomy legs.');
- await panel.getByRole('button',{name:'Save details',exact:true}).click();
- await panel.getByText('Details saved. Future assessments use this example.',{exact:true}).waitFor();
+ await panel.getByLabel('Size you wore · optional').fill('34');
+ await panel.getByLabel('Fit details · optional').fill('Good full length and roomy legs.');
+ await panel.getByRole('button',{name:'Save feedback',exact:true}).click();
+ await panel.getByText('Feedback saved.',{exact:true}).waitFor();
  const favourites=await worker.evaluate(async()=> (await chrome.storage.local.get('goodFits')).goodFits);
  assert.equal(favourites.length,1);assert.equal(favourites[0].size,'34');assert.equal(favourites[0].reason,'Good full length and roomy legs.');
  await shop.goto('http://127.0.0.1:43119/products/another-jeans');await shop.bringToFront();
@@ -129,22 +131,43 @@ try{
  const popupRequests=await worker.evaluate(()=>globalThis.testRequests);
  let popupBox=await shop.locator('#forma-fit-card').boundingBox();
  await shop.mouse.click(popupBox.x+75,popupBox.y+popupBox.height-33);
- await panel.locator('#popup-fit-editor').getByRole('heading',{name:'Your good fit',exact:true}).waitFor();
+ await panel.locator('#popup-fit-editor').getByRole('heading',{name:'Your fit feedback',exact:true}).waitFor();
  assert.ok(await worker.evaluate(()=>globalThis.openedFitTab));
- await panel.locator('#popup-fit-editor').getByLabel('Size that actually fits you').fill('34 x 32');
- await panel.locator('#popup-fit-editor').getByLabel('What do you like?').fill('Roomy legs');
- await panel.locator('#popup-fit-editor').getByRole('button',{name:'Save details',exact:true}).click();
- await panel.locator('#popup-fit-editor').getByText('Details saved. Future assessments use this example.').waitFor();
+ await panel.locator('#popup-fit-editor').getByLabel('Size you wore · optional').fill('34 x 32');
+ await panel.locator('#popup-fit-editor').getByLabel('Fit details · optional').fill('Roomy legs');
+ await panel.locator('#popup-fit-editor').getByRole('button',{name:'Save feedback',exact:true}).click();
+ await panel.locator('#popup-fit-editor').getByText('Feedback saved.').waitFor();
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),popupRequests);
  await shop.bringToFront();popupBox=await shop.locator('#forma-fit-card').boundingBox();
  await shop.mouse.click(popupBox.x+220,popupBox.y+popupBox.height-33);
- await panel.locator('#popup-fit-editor').getByRole('heading',{name:'What did not fit?',exact:true}).waitFor();
+ await panel.locator('#popup-fit-editor').getByRole('heading',{name:'Your fit feedback',exact:true}).waitFor();
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),popupRequests);
- assert.ok(await panel.locator('#popup-fit-editor').getByRole('button',{name:'Too short',exact:true}).isDisabled(),'Never invent a tried size');
- await panel.locator('#popup-fit-editor').getByRole('button',{name:'Close fit details'}).click();
+ assert.ok(await panel.locator('#popup-fit-editor').getByRole('button',{name:'Save feedback',exact:true}).isDisabled(),'Never invent a tried size');
+ const fitEditor=panel.locator('#popup-fit-editor');
+ const feedbackBefore=await worker.evaluate(async()=>(await chrome.storage.local.get('feedback')).feedback||[]);
+ assert.ok(await fitEditor.getByRole('button',{name:'Save feedback',exact:true}).isDisabled());
+ await fitEditor.getByLabel('Size you wore',{exact:true}).fill('34 x 32');
+ const fitComment='Gut, könnte 1–2 cm länger sein, aber auch so geht es. Die Breite ist gut.';
+ await fitEditor.getByLabel('Fit details · optional').fill(fitComment);
+ await fitEditor.getByText('Quick labels · optional',{exact:true}).click();
+ await fitEditor.getByRole('button',{name:'Too short',exact:true}).click();
+ assert.equal(await fitEditor.getByRole('button',{name:'Too short',exact:true}).getAttribute('aria-pressed'),'true');
+ assert.deepEqual(await worker.evaluate(async()=>(await chrome.storage.local.get('feedback')).feedback||[]),feedbackBefore,'Selecting a category must not save prematurely');
+ await fitEditor.getByRole('button',{name:'Too short',exact:true}).click();
+ await fitEditor.getByRole('button',{name:'Save feedback',exact:true}).click();
+ await fitEditor.waitFor({state:'detached'});
+ const storedFeedback=await worker.evaluate(async()=>(await chrome.storage.local.get('feedback')).feedback);
+ assert.equal(storedFeedback.length,feedbackBefore.length+1);
+ assert.equal(storedFeedback[0].size,'34 x 32');assert.equal(storedFeedback[0].note,fitComment);
+ assert.equal(storedFeedback[0].value,'Fit note','Free text must not be mislabelled as Too short or Fits');
+ assert.equal(storedFeedback[0].url,'http://127.0.0.1:43119/products/model-jeans');
+ for(let i=0;i<100;i++){if(await worker.evaluate(note=>globalThis.testInput?.feedback?.some(f=>f.note===note),fitComment))break;await panel.waitForTimeout(100);}
+ assert.ok(await worker.evaluate(note=>globalThis.testInput.feedback.some(f=>f.note===note),fitComment),'The full note must reach the next assessment');
  await shop.goto('http://127.0.0.1:43119/products/odessa');await shop.bringToFront();
  await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).waitFor({timeout:15000});
  const odessaInput=await worker.evaluate(()=>globalThis.testInput);
+ await panel.getByRole('heading',{name:'Fit scores',exact:true}).waitFor();
+ await panel.getByText(/Fit score:.*\/100/).waitFor();
  assert.equal(odessaInput.product.parsed,null);assert.equal(odessaInput.product.measurementTables[0].rows.length,6);
  assert.equal(odessaInput.product.measurementTables[0].rows[4][2],'107');assert.equal(odessaInput.decision.canSelectSize,true);
  await panel.bringToFront();
@@ -154,34 +177,51 @@ try{
  assert.ok((await worker.evaluate(()=>chrome.scripting.getRegisteredContentScripts())).some(s=>s.id==='all-shops'));
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
  await panel.getByLabel('Usual shoe size · EU').fill('45');
- await panel.getByLabel('Usual shoe size · EU').blur();
+ await panel.getByRole('button',{name:'Save profile',exact:true}).click();
  await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
- // Editing the existing notes field persists raw text, without one AI request per keystroke.
+ // Notes saving must remain available while a real product request is pending.
  await shop.bringToFront();await panel.waitForTimeout(1000);
+ await worker.evaluate(()=>{globalThis.holdNext=true;});
+ await panel.getByRole('button',{name:/01.*Your fit/}).click();
+ await panel.getByRole('button',{name:'Refresh',exact:true}).click();
+ for(let i=0;i<100;i++){if(await worker.evaluate(()=>globalThis.held))break;await panel.waitForTimeout(100);}
+ assert.ok(await worker.evaluate(()=>globalThis.held));
+ await panel.getByRole('button',{name:/02.*Your profile/}).click();
  const beforeNotes=await worker.evaluate(()=>globalThis.testRequests);
  const notes='waist 46cm bei hosen sind mir gerade noch knapp okay, lieber bisschen grösser, darunter lieber nicht. Beine bitte nicht noch weiter.';
- await panel.getByLabel('Your fit, in your words').fill(notes.slice(0,40));
- await panel.getByLabel('Your fit, in your words').fill(notes);
+ await panel.getByLabel('Add a fit note').fill(notes);
+ assert.ok(await panel.getByRole('button',{name:'Save note',exact:true}).isEnabled(),'Saving cannot wait for AI');
+ await panel.getByRole('button',{name:'Save note',exact:true}).click();
  await panel.waitForFunction(async text=>(await chrome.storage.local.get('description')).description===text,notes);
- await panel.waitForTimeout(1000);
- assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes,'Typing and autosaving notes uses no AI');
+ await panel.waitForFunction(()=>document.querySelector('.profile-notes textarea')?.value==='');
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes,'Saving notes uses no AI');
+ await panel.getByText('Saved fit notes',{exact:true}).click();
+ await panel.getByText(notes,{exact:true}).waitFor();
  await panel.getByText('Optional: fill basic profile fields',{exact:true}).click();
  await panel.getByRole('button',{name:'Find basic details',exact:true}).click();
  await panel.getByText('No supported details found yet.',{exact:true}).waitFor();
  assert.notEqual(await worker.evaluate(async()=>(await chrome.storage.local.get('profile')).profile.context.waistLabel),'W46');
- await panel.getByRole('button',{name:'Use notes for this item',exact:true}).click();
+ await worker.evaluate(()=>globalThis.releaseHeld());
+ await panel.waitForFunction(async()=>Object.values(await chrome.storage.session.get(null)).some(v=>v?.name==='Odessa Jeans'&&v.assessment?.status==='ready'));
+ await panel.getByRole('button',{name:'Update this item with saved notes',exact:true}).click();
  await panel.getByText('AI ASSESSMENT · COMPLETED',{exact:true}).waitFor({timeout:15000});
  assert.equal(await worker.evaluate(()=>globalThis.testInput.profile.description),notes);
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1);
- await panel.reload();await shop.bringToFront();
+ assert.equal(await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).count(),1);
+ const reopeningRequests=await worker.evaluate(()=>globalThis.testRequests);
+ for(let i=0;i<3;i++){await panel.reload();await shop.bringToFront();await panel.waitForTimeout(700);}
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),reopeningRequests,'Reopening the extension does not make AI calls');
+ assert.equal(await worker.evaluate(async()=>(await chrome.storage.local.get('profile')).profile.context.style),'Urban / Alternative');
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
- await panel.waitForFunction(text=>document.querySelector('textarea')?.value===text,notes);
- await panel.getByRole('button',{name:'Use notes for this item',exact:true}).click();
+ assert.equal(await panel.getByLabel('Add a fit note').inputValue(),'');
+ await panel.getByText('Saved fit notes',{exact:true}).click();
+ await panel.getByText(notes,{exact:true}).waitFor();
+ await panel.getByRole('button',{name:'Update this item with saved notes',exact:true}).click();
  await panel.getByText('AI ASSESSMENT · CACHED',{exact:true}).waitFor({timeout:15000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),beforeNotes+1,'Unchanged notes reuse the assessment');
  await panel.getByRole('button',{name:/02.*Your profile/}).click();
  assert.deepEqual(errors,[]);
- if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
+ if(process.env.FORMA_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});}
  // Invalidate the real isolated extension while keeping its shop tab open.
  const shopErrors=[];shop.on('pageerror',error=>shopErrors.push(error.message));
  await worker.evaluate(()=>chrome.runtime.reload()).catch(()=>{});
@@ -189,5 +229,5 @@ try{
  for(let i=0;i<3;i++){await shop.evaluate(i=>document.querySelector('h1').textContent='Odessa Jeans '+i,i);await shop.waitForTimeout(700);}
  assert.equal(await shop.locator('#forma-fit-card').count(),0,'An invalidated reader disposes its popup');
  assert.deepEqual(shopErrors,[],'Reload must not leave uncaught context invalidation errors');
- console.log(JSON.stringify({result:'passed',freeTextAutosavesWithoutAI:true,fullNotesReachAI:true,notesSurvivePanelReload:true,unchangedNotesReuseCache:true,reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
+ console.log(JSON.stringify({result:'passed',freeTextFitFeedbackSaved:true,optionalCategoryDoesNotAutosave:true,saveNotesWhileAIIsRunning:true,notesComposerClearsAfterSaving:true,fullNotesReachAI:true,notesSurvivePanelReload:true,unchangedNotesReuseCache:true,reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

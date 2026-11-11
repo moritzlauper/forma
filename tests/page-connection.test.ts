@@ -37,3 +37,5 @@ test('Absent data and interrupted AI never display an endless Waiting for AI sta
  assert.equal(idlePageStatus(c,undefined,{status:'running',model:'test',startedAt:1000},2000).title,'Reviewing garment and fit…');
  assert.equal(idlePageStatus(c,{status:'error',at:1000,error:'Read failed'},undefined,2000).text,'Read failed');
 });
+
+test('Reopening a panel with a live reader only pings and never requests another scan',async()=>{const b=browser({reader:true});const connect=createPageConnector(b.api);for(let i=0;i<3;i++)await connect(tab);assert.ok(b.messages.every(m=>m.type==='forma-ping'));assert.equal(b.injections,0);});

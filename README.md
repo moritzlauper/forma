@@ -1,12 +1,12 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.4.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.5.
 
 ## Install
 
 Run `npm ci`, `npm run check`, `npm test`, and `npm run build`. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist`. After rebuilding, reload FORMA there and refresh connected shop tabs. Alternatively, extract the release ZIP and load its folder.
 
-New installations start with an empty profile. Existing profiles and saved API keys stay in the browser when updating the same installation. Missing body dimensions receive broad, unvalidated starting estimates after height and weight are provided. Manual and locked values take precedence. Automatic numeric body estimates are excluded from AI input and cannot produce a local size recommendation.
+New installations start with an empty profile. Existing profiles and saved API keys stay in the browser when updating the same installation. Missing body dimensions receive broad, unvalidated starting estimates after height and weight are provided. Manual and locked values take precedence. Automatic numeric body estimates are sent separately with uncertainty ranges as weak AI evidence; they are not treated as measured facts and cannot independently produce a local size recommendation.
 
 ## Everyday use
 
@@ -30,13 +30,13 @@ The panel shows the model, completion/cache status, image inclusion, reasons and
 
 Fit assessments request schema-constrained JSON. Token-limit stops, refusals and malformed responses are checked before accepting a result; partial answers are never repaired into recommendations. Refresh can retry failures or replace an earlier completed answer.
 
-FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated numeric body dimensions remain excluded to avoid false precision. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. Chat conversations outside the extension are not automatically imported as profile feedback.
+FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated dimensions are supplied separately with their broad uncertainty ranges. Measured values and actual fit feedback take priority. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. Chat conversations outside the extension are not automatically imported as profile feedback.
 
 ## Relative fit scores
 
 One AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes the overall weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
 
-The panel shows every size's total and component scores plus a short explanation. The compact shop card shows the top three totals. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
+The panel shows every size's total and component scores plus a short explanation. The compact shop card shows up to six totals near the top. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
 
 Use **Record actual fit** to record the size you tried. That experience takes priority for the same product. No specific product, brand, user measurement or size outcome is baked into the defaults.
 
@@ -58,7 +58,7 @@ Saving a good fit copies available scan evidence locally and makes **no AI reque
 
 ## Cost and privacy
 
-Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, the bounded sanitised source fallback when parsing fails, model/size/fit details, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known profile measurements/preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
+Anthropic defaults to **Claude Haiku 5.5**, model ID `claude-haiku-5-5`. AI fit assessment is enabled by default but requires your key and browser connection permission. Product text/charts, the bounded sanitised source fallback when parsing fails, model/size/fit details, up to two product photo URLs, the saved fit description, relevant saved good fits and notes, known and estimated profile measurements (kept separate), preferences and matching fit feedback are sent to Anthropic. The API fetches attached photo URLs to analyse them. Profile names are excluded from assessment input. Avoid including private information in free-text preferences.
 
 Keys are remembered in trusted extension-local storage on this device and excluded from profile exports. Browser storage is not an encrypted password vault. Settings includes **Forget API key**. No key is embedded in page scripts or source.
 
@@ -119,3 +119,15 @@ The existing **Your fit, in your words** field now autosaves the complete notes.
 Basic-field extraction is optional. Values such as `waist 46 cm` no longer become `W46`; explicit `W33/W34` labels remain supported. The assessment distinguishes waistband comfort from leg width and gives concrete personal tolerances priority over generic loose-fit assumptions. Free text does not become a verified body measurement.
 
 Validation: 132 automated tests, TypeScript and build checks, and isolated Chromium extension tests with stubbed AI responses. Notes persistence, complete AI input, no requests while typing, and cache reuse after panel reload are covered.
+
+### 1.3.5 updates
+
+Profile notes now use **Save note**: saving clears the composer and leaves the text under **Saved fit notes**, where it can be edited. Saving remains available during AI analysis and does not start a request. **Update this item with saved notes** is a separate action. This replaces the 1.3.4 autosave composer.
+
+**Body & usual sizes** groups height, weight, jeans and shoe size. **Fit preferences** groups style, preferred fit and editable concerns. **Save profile** persists changes. Profile migration repairs repeated trailing “e” characters in Alternative and is idempotent; opening the panel does not change AI input or start a new scan when the reader is already connected.
+
+Good fits and product feedback share the same size/note form and **Save feedback** action. Quick labels are optional and never save on click. Product feedback can be corrected from the profile. **Auto / Fixed** replaces the unexplained measurement dots: it controls whether profile changes update the estimate, not whether AI can use it.
+
+Read measurement tables now receive relative size scores even without a resolved flat-width convention. Unknown factors stay blank; no precise measurements are invented. Scores remain visible when the model judges the cut unsuitable. The prompt explicitly rejects forced upsizing when added waist room would worsen leg width; it does not guarantee real-world fit.
+
+Validation: automated tests plus isolated Chromium with simulated AI responses cover raw notes during a pending request, editable feedback, scores from transposed charts and repeated panel reopening without extra AI calls. Live model recommendations are not verified by these tests.

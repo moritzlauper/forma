@@ -1,4 +1,4 @@
-export const READER_PROTOCOL='forma-reader-v7';
+export const READER_PROTOCOL='forma-reader-v8';
 export type Connection={status:'checking'|'connected'|'permission'|'unsupported'|'error';message:string;at:number};
 export function deadline<T>(work:Promise<T>,ms:number,message:string):Promise<T>{
  let timer:ReturnType<typeof setTimeout>;
@@ -18,6 +18,8 @@ export function createPageConnector(api:Pick<typeof chrome,'permissions'|'script
     if(!await deadline(api.permissions.contains({origins:[new URL(tab.url).origin+'/*']}),timeout,'Could not check website access.'))return result('permission','Website access is not enabled for this shop. Click Analyse this page to connect it.');
     const ping=()=>deadline(api.tabs.sendMessage(id,{type:'forma-ping'},{frameId:0}),timeout,'The page reader did not respond.');
     let reader=await ping().catch(()=>null);
+    const live=reader?.protocol===READER_PROTOCOL;
+    if(live&&!options.force&&!options.retry&&!options.fresh)return result('connected','Connected. Showing the existing assessment.');
     if(reader?.protocol!==READER_PROTOCOL){
      // An invalidated extension context can leave its window guard behind.
      // Remove only our reader before reinjecting, even when its version matches.

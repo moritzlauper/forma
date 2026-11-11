@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {scoreSizes,fitWeights,type SizeRating} from '../src/scoring';
+import type {Product} from '../src/fit';
+const product:Product={name:'Box hoodie',category:'top',measurementType:'garment',unit:'cm',flat:true,source:'test',sizes:[{label:'A',available:true,measures:{chest:60,length:66}},{label:'B',available:true,measures:{chest:63,length:70}}]};
+const ratings:SizeRating[]=[{size:'A',width:90,length:40,style:65,sleeves:100,reason:'Wide enough, but short.'},{size:'B',width:80,length:85,style:80,sleeves:null,reason:'More coverage with extra width.'}];
+test('Weighted ranking considers length, not just the widest-fit score',()=>{
+ const scores=scoreSizes(ratings,product,['A','B'],fitWeights(product,[]));assert.equal(scores[0].size,'B');assert.equal(scores[0].overall,82);assert.equal(scores[1].overall,62);
+});
+test('Missing sleeves cannot become a fabricated score or a zero-point penalty',()=>{
+ const scores=scoreSizes(ratings,product,['A','B'],fitWeights(product,['sleeve']));assert.ok(scores.every(s=>s.sleeves===null));assert.equal(scores[0].overall,82);assert.equal(scores[0].assessed,3);assert.equal(scores[0].applicable,4);
+});
+test('Excluded sizes never win even if the AI gives them higher scores',()=>{
+ const scores=scoreSizes(ratings,product,['A'],fitWeights(product,[]));assert.equal(scores[0].size,'A');assert.equal(scores[1].overall,null);
+});
+test('Unknown, duplicate, missing and out-of-range ratings are rejected',()=>{
+ const weights=fitWeights(product,[]);
+ for(const invalid of [[ratings[0]], [ratings[0],ratings[0]], [ratings[0],{...ratings[1],size:'Z'}],[ratings[0],{...ratings[1],width:101}]])assert.throws(()=>scoreSizes(invalid,product,['A','B'],weights));
+});
+test('Scores stay null when every applicable factor is unknown',()=>{
+ const scores=scoreSizes(ratings.map(s=>({...s,width:null,length:null,style:null,sleeves:null})),product,['A','B'],fitWeights(product,[]));assert.ok(scores.every(s=>s.overall===null&&s.assessed===0));
+});

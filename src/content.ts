@@ -19,7 +19,8 @@ import {discoverCharts,collectProductImages,productText} from './page-discovery'
   if(!charts.length&&!document.querySelector('[itemtype*="Product"],form[action*="cart"],button[name="add"]')&&!Array.from(document.querySelectorAll('script[type="application/ld+json"]')).some(s=>/"@type"\s*:\s*"Product"/.test(s.textContent||'')))return;
   try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,images:photos,text:description,retry});if(id!==seq||url!==location.href||!answer.result)return;
    card.replaceChildren();const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=answer.result.message;card.append(b,p);
-   if(answer.result.model){const source=document.createElement('small');source.textContent=answer.result.model+(answer.result.cached?' · cached':'');card.append(source);}
+   if(answer.result.model){const source=document.createElement('small');source.textContent=answer.result.model+(answer.result.basis==='estimate'?' · tentative fit estimate':'')+(answer.result.cached?' · cached':'');card.append(source);}
+   if(answer.result.scores?.length){const scores=document.createElement('small');scores.textContent='Relative fit scores: '+answer.result.scores.filter((s:{overall:number|null})=>s.overall!==null).slice(0,3).map((s:{size:string;overall:number})=>`${s.size} ${s.overall}/100`).join(' · ');card.append(scores);}
    if(answer.result.reasons?.length){const reasons=document.createElement('small');reasons.textContent=answer.result.reasons.slice(0,3).join(' · ');card.append(reasons);}
    const row=answer.result.ranked?.[0];if(row){const small=document.createElement('small');small.textContent=row.details.map((d:{key:string;text:string})=>d.key+': '+d.text).join(' · ')+(row.available?'':' · sold out');card.append(small);}
    document.body.append(host);

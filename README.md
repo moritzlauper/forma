@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 0.2.3 preview.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 0.3.0 preview.
 
 ## Install
 
@@ -18,7 +18,13 @@ The panel shows the model, completion/cache status, image inclusion, reasons and
 
 Fit assessments request schema-constrained JSON. Token-limit stops, refusals and malformed responses are checked before accepting a result; partial answers are never repaired into recommendations. Refresh retries failed assessments, while successful results continue to use the cache.
 
-Size selection also has an evidence check outside the model: a known body/reference measurement or a successfully tried size must anchor the comparison. Stated sleeve/leg/hoodie-length concerns need comparable measurements or confirmed fit. Chest width cannot override an unresolved sleeve concern. The AI still explains cut and proportions when no personal size is supportable. A negative fit report rules out contradicted options; it does not prove that the next size fits. Chat conversations outside the extension are not automatically imported as profile feedback.
+FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated numeric body dimensions remain excluded to avoid false precision. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. Chat conversations outside the extension are not automatically imported as profile feedback.
+
+## Relative fit scores
+
+One AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes the overall weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
+
+The panel shows every size's total and component scores plus a short explanation. The compact shop card shows the top three totals. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
 
 Use **Record actual fit** to record the size you tried. That experience takes priority for the same product. No specific product, brand, user measurement or size outcome is baked into the defaults. Cross-brand learning is not implemented.
 
@@ -44,7 +50,7 @@ Size-guide discovery supports recognised in-page tabs, buttons and disclosures; 
 
 ## Verification
 
-55 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
+63 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
 
 ## References
 

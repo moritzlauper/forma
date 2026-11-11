@@ -4,7 +4,7 @@ import {createPageConnector,READER_PROTOCOL} from '../src/page-connection';
 import {idlePageStatus} from '../src/page-status';
 function browser({allowed=true,reader=false,broken=false}={}){
  let loaded=reader;let injections=0;const messages:any[]=[];
- const api:any={permissions:{contains:async()=>allowed},scripting:{executeScript:async()=>{injections++;if(broken)throw Error('Cannot access page');loaded=true;}},tabs:{sendMessage:async(_id:number,m:any)=>{messages.push(m);if(!loaded)throw Error('Receiving end does not exist');return m.type==='forma-ping'?{protocol:READER_PROTOCOL}:{accepted:true};}}};
+ const api:any={permissions:{contains:async()=>allowed},scripting:{executeScript:async(args:any)=>{if(broken)throw Error('Cannot access page');if(args.files){injections++;loaded=true;}}},tabs:{sendMessage:async(_id:number,m:any)=>{messages.push(m);if(!loaded)throw Error('Receiving end does not exist');return m.type==='forma-ping'?{protocol:READER_PROTOCOL}:{accepted:true};}}};
  return {api,messages,get injections(){return injections;}};
 }
 const tab={id:4,url:'https://shop.test/products/jeans'};

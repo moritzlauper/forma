@@ -19,6 +19,13 @@ export function createPageConnector(api:Pick<typeof chrome,'permissions'|'script
     const ping=()=>deadline(api.tabs.sendMessage(id,{type:'forma-ping'},{frameId:0}),timeout,'The page reader did not respond.');
     let reader=await ping().catch(()=>null);
     if(reader?.protocol!==READER_PROTOCOL){
+     // An invalidated extension context can leave its window guard behind.
+     // Remove only our reader before reinjecting, even when its version matches.
+     await deadline(api.scripting.executeScript({target:{tabId:id},func:()=>{
+      const state=window as unknown as {formaReader?:{dispose?:()=>void}};
+      try{state.formaReader?.dispose?.();}catch{}
+      delete state.formaReader;
+     }}),timeout,'The old page reader could not be reset.');
      await deadline(api.scripting.executeScript({target:{tabId:id},files:['content.js']}),timeout,'The page reader could not start. Refresh the shop page and try again.');
      reader=await ping();
     }

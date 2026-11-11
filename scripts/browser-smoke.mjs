@@ -45,6 +45,12 @@ try{
  await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.tabs.sendMessage(tab.id,{type:'refresh'});});
  await panel.getByText('AI ASSESSMENT · CACHED',{exact:true}).waitFor({timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),2);
+ // Simulate the invalidated reader left in an open tab after extension reload:
+ // matching guard, but no live message listener. Refresh must repair it.
+ await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>{window.formaReader.dispose();window.formaReader={protocol:'forma-reader-v2',dispose(){throw Error('Extension context invalidated');}};}});});
+ await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
+ await panel.getByText('Test assessment completed #3',{exact:true}).waitFor({timeout:10000});
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),3);
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='☆ Save as a good fit').click());
  await panel.getByText('✓ Saved as a good fit',{exact:true}).waitFor();
  await panel.getByText('Your good fit · optional details',{exact:true}).click();

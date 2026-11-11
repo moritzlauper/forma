@@ -20,6 +20,11 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
  const revision=(revisions.get(tab)||0)+1;revisions.set(tab,revision);
  (async()=>{
   const page:Page={url:sender.url||'',name:String(msg.name).slice(0,200),text:String(msg.text).slice(0,16000),charts:Array.isArray(msg.charts)?msg.charts.slice(0,12).map((t:{text?:unknown;context?:unknown})=>({text:String(t.text||'').slice(0,8000),context:String(t.context||'').slice(0,10000)})):[]};
+  page.detection=msg.detection;page.manual=msg.manual===true;
+  if(page.detection?.kind!=='clothing'&&!page.manual){
+   await chrome.storage.session.set({['page:'+tab]:{...page,text:'',charts:[],images:[],product:null,result:null,reason:'No clothing product detected locally. Use “Analyse this page” to start manually.'}});
+   reply({url:page.url,skipped:true});return;
+  }
   page.images=Array.isArray(msg.images)?msg.images.filter((s:unknown)=>{if(typeof s!=='string')return false;try{const u=new URL(s);return u.protocol==='https:'&&!u.username&&!u.password&&!/^(localhost|127\.|192\.168\.|10\.)/.test(u.hostname);}catch{return false;}}).slice(0,2):[];
   const data=await chrome.storage.local.get(['profile','description','products','settings','apiKey','feedback']);
   const saved=(data.products as Record<string,{product:Product;fingerprint:string}>|undefined)?.[page.url];

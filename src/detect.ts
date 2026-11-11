@@ -1,10 +1,10 @@
 import {parseTable,type Category,type Product} from './fit';
 import {sizeLabel} from './chart-shape';
+import {clothingCategory,type PageDetection} from './product-page';
 export type Chart={text:string;context:string};
-export type Page={url:string;name:string;text:string;charts:Chart[];images?:string[]};
+export type Page={url:string;name:string;text:string;charts:Chart[];images?:string[];detection?:PageDetection;manual?:boolean};
 export function detect(page:Page):{product:Product|null;reason:string}{
- const name=page.name.toLowerCase();
- const category:Category|null=/hoodie|t-shirt|shirt|sweater|pullover|tee|hemd/.test(name)?'top':/jacket|coat|jacke|mantel/.test(name)?'jacket':/jeans|trousers|pants|hose|shorts/.test(name)?'trousers':/dress|overall|kleid|jumpsuit/.test(name)?'dress':/shoes|sneaker|boots|schuhe/.test(name)?'shoes':null;
+ const category:Category|null=page.detection?.category||clothingCategory(page.name);
  if(!category)return {product:null,reason:'Product category not clear yet.'};
  const candidates:Product[]=[];let reason='FORMA could not read a size chart after checking this page’s size guide.';
  for(const chart of page.charts){

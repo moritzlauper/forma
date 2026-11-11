@@ -6,5 +6,6 @@ header{padding:22px 24px;border-bottom:1px solid var(--line);gap:16px}
 .wordmark{display:block;font-family:Arial,Helvetica,sans-serif;font-size:42px;font-weight:800;line-height:1;letter-spacing:-2.5px}
 .wordmark .brand-dot{padding:0;color:var(--accent);letter-spacing:0}
 .theme{border:0;background:transparent;color:var(--muted);padding:8px;font-size:20px}
+section+section{margin-top:24px}
 nav button{border-radius:4px;font-weight:500}nav button span{font-size:10px;opacity:.65}
 @media(max-width:700px){header{padding:20px 20px 18px}.wordmark{font-size:40px}aside{padding:10px 14px}nav{gap:5px;justify-content:flex-start}nav button{padding:9px 10px}nav button[aria-current=step]{background:var(--face);color:var(--accent);box-shadow:inset 0 -2px var(--accent)}}

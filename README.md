@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.0.0.
+A Chrome extension for explainable clothing-fit assessments. English interface; simple English and German profile descriptions are recognised locally. Version 1.1.0.
 
 ## Install
 
@@ -10,7 +10,13 @@ New installations start with an empty profile. Existing profiles and saved API k
 
 ## Everyday use
 
-Describe your fit preferences, add your API key and allow the AI connection in Settings. Connect a shop once, or explicitly enable all-site access. On supported product pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart. FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. FORMA never selects sizes or modifies the cart.
+Describe your fit preferences in **Your profile**. The first-start card already selects Claude Haiku 5.5: enter your API key and choose **Enable AI & automatic detection**. Chrome asks for website access once. The key stays on this device; existing keys and explicit provider preferences are preserved. You can also enable automatic detection from Settings.
+
+Clothing product pages are recognised locally from product metadata, clothing names/categories, prices, sizes and purchase controls. This classification uses no AI or tokens. Catalogues, articles and unrelated products are skipped. On recognised pages, FORMA automatically assesses fit with the selected provider, even when its local parser already recognises the chart.
+
+If a page is missed, choose **Analyse this page**. This requests access to that shop if needed and bypasses classification for the current page. It uses the same chart discovery, AI, cache and budget as automatic analysis. Refresh retains manual activation; navigation clears it. It does not guarantee that missing measurements can be recovered.
+
+FORMA reads charts already present in closed sizing tabs. If a chart is loaded on demand, it opens a recognised in-page Sizing/Size guide control and waits briefly for the table before asking AI. FORMA never selects sizes or modifies the cart.
 
 The assessment combines available size measurements, garment description, profile preferences and matching recorded fit experience. With Anthropic, up to two product photos from Product structured data, social preview metadata or the product gallery are included. Photos help assess silhouette, dropped shoulders and visible hem construction; they do not supply exact centimetres or prove fit on the wearer. Hoodie and T-shirt length preferences are considered separately. A broad body with a narrowing ribbed hem can wear differently from a straight-hem shirt.
 
@@ -38,7 +44,7 @@ Keys are remembered in trusted extension-local storage on this device and exclud
 
 Detection and parsing are local. Identical assessment inputs are cached locally, retaining 40 results. Concurrent identical assessments share a request. Profile, feedback or product changes may require a new paid assessment. The request limit counts attempts, including failures; it is not a monetary budget. Failed automatic requests are not retried on every page mutation during the worker session. Press Refresh to retry a failed assessment within the request limit. Reloading the worker or changing settings can also allow another attempt.
 
-The default allowance is **100 total requests**, with the consumed count saved between sessions. Existing unversioned limits of 10 migrate to 100 without resetting usage; other custom limits and zero remain unchanged. Settings shows used/remaining requests and applies edits only when **Save limit** is clicked. **Allow 100 more requests** is available in Settings and directly beside the exhausted-budget message. Automatic assessments and manual chart extraction share one serialised counter. Increasing the limit releases blocked work without duplicating an assessment already in progress. Cached results remain usable at the limit.
+The default allowance is **100 total requests**, with the consumed count saved between sessions. Existing unversioned limits of 10 migrate to 100 without resetting usage; other custom limits and zero remain unchanged. Settings shows used/remaining requests and applies edits only when **Save limit** is clicked. Choose **No request cap** to keep assessing beyond the allowance; usage is still counted and API charges still apply. **Allow 100 more requests** is available in Settings and directly beside the exhausted-budget message. Automatic assessments and manual chart extraction share one serialised counter. Increasing or removing the limit releases blocked work without duplicating an assessment already in progress. Cached results remain usable at the limit.
 
 Choose **No AI** for free local comparison using reliable measurements. Ollama uses a locally installed text model at `http://localhost:11434`; product photos are not attached in this mode. Configure `OLLAMA_ORIGINS` for your exact `chrome-extension://ID` origin and restart Ollama. Local inference needs suitable hardware and electricity.
 
@@ -52,7 +58,7 @@ Size-guide discovery supports recognised in-page tabs, buttons and disclosures; 
 
 ## Verification
 
-69 automated tests cover unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome shop flow still needs live end-to-end verification.
+78 automated tests cover local product-page recognition, skipping unrelated pages without AI calls, manual activation and navigation reset, uncapped budgets, unit conversion, table detection, estimated-measurement limitations, feedback contradictions, AI transport with parsed charts, image blocks, error handling and cached background assessment. TypeScript and production build checks pass. A text assessment was previously tested against the live Anthropic API. Product-image transport is covered with mocked API tests; the updated Chrome permission/setup flow still needs live end-to-end verification.
 
 ## References
 

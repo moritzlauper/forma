@@ -9,7 +9,7 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
  globalThis.fetch=async(_url,init)=>{calls++;const input=JSON.parse(JSON.parse(String(init?.body)).messages[0].content);assert.equal(input.profile.description,local.description);assert.equal(input.profile.measures.chest,undefined);assert.equal(input.decision.canSelectSize,false);return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Need measured evidence for this hoodie',reasons:['Cut and length matter'],limitations:['Sleeves unknown']})}]}));};
  try{
   await import('../src/background');
-  const msg={type:'page',name:'Cotton hoodie',text:'Cotton hoodie, box fit',charts:[{text:'Size;Chest\nM;60',context:'Garment measurements cm measured flat'}]};
+  const msg={type:'page',name:'Cotton hoodie',text:'Cotton hoodie, box fit',detection:{kind:'clothing',name:'Cotton hoodie',category:'top',signals:['product data']},charts:[{text:'Size;Chest\nM;60',context:'Garment measurements cm measured flat'}]};
   const send=()=>new Promise<any>(resolve=>listener(msg,{tab:{id:1},url:'https://example.test/hoodie'},resolve));
   const first=await send();assert.equal(calls,1);assert.equal(first.result.model,'claude-haiku-5-5');assert.equal(session['page:1'].assessment.status,'ready');assert.equal(local.aiCount,1);
   const repeated=await send();assert.equal(calls,1);assert.equal(local.aiCount,1);assert.equal(repeated.result.cached,true);
@@ -41,5 +41,13 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   local.settings={...(local.settings as object),limit:300};await storageListener({settings:{newValue:local.settings}},'local');
   const secondPending=send();complete();await Promise.all([firstPending,secondPending]);
   assert.equal(calls,5);assert.equal(local.aiCount,103);
+  // Local negatives do not spend tokens. The user's manual activation bypasses
+  // classification, but shares normal budget, cache and assessment handling.
+  const missed={...msg,name:'Archive 04',detection:{kind:'unknown',name:'Archive 04',category:null,signals:['price']}};
+  const skipped=await new Promise<any>(resolve=>listener(missed,{tab:{id:1},url:'https://example.test/archive'},resolve));
+  assert.equal(skipped.skipped,true);assert.equal(calls,5);assert.equal(local.aiCount,103);assert.equal(session['page:1'].assessment,undefined);
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Finished once',reasons:[],limitations:[]})}]}));};
+  const forced=await new Promise<any>(resolve=>listener({...missed,manual:true},{tab:{id:1},url:'https://example.test/archive'},resolve));
+  assert.equal(forced.result.message,'Finished once');assert.equal(calls,6);assert.equal(local.aiCount,104);assert.equal(session['page:1'].manual,true);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

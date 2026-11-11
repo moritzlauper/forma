@@ -1,5 +1,6 @@
 export const DEFAULT_REQUEST_LIMIT=100;
-export type BudgetSettings={limit?:number;limitVersion?:number};
+export type BudgetSettings={limit?:number;limitVersion?:number;unlimited?:boolean};
+export function hasNoRequestCap(settings?:unknown):boolean{return !!settings&&typeof settings==='object'&&(settings as BudgetSettings).unlimited===true;}
 export function requestLimit(settings?:unknown):number{
  const config=settings&&typeof settings==='object'?settings as BudgetSettings:undefined;
  const value=config?.limit;
@@ -18,7 +19,7 @@ export function createRequestBudget(storage:Storage){
    const data=await storage.get(['settings','aiCount']);
    const limit=requestLimit(data.settings);
    const used=Number.isSafeInteger(data.aiCount)&&data.aiCount>=0?data.aiCount:0;
-   if(used>=limit)return {allowed:false,used,limit};
+   if(!hasNoRequestCap(data.settings)&&used>=limit)return {allowed:false,used,limit};
    await storage.set({aiCount:used+1});
    return {allowed:true,used:used+1,limit};
   });

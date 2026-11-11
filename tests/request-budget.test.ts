@@ -25,3 +25,10 @@ test('A saved increase applies to the next request without resetting usage',asyn
 test('One-click extension creates headroom even if count already exceeds the limit',()=>{
  assert.equal(additionalRequests(100,100),200);assert.equal(additionalRequests(10,27),127);assert.equal(additionalRequests(100,10),200);
 });
+test('An explicitly uncapped budget keeps counting without blocking, and can be capped again',async()=>{
+ const store=storage({settings:{limit:100,limitVersion:1,unlimited:true},aiCount:100});const reserve=createRequestBudget(store);
+ assert.deepEqual(await reserve(),{allowed:true,used:101,limit:100});
+ assert.deepEqual(await reserve(),{allowed:true,used:102,limit:100});
+ await store.set({settings:{limit:100,limitVersion:1,unlimited:false}});
+ assert.equal((await reserve()).allowed,false);assert.equal(store.data.aiCount,102);
+});

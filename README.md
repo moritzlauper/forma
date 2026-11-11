@@ -103,3 +103,11 @@ Transposed measurement tables (sizes across columns) are retained as structured 
 If Anthropic cannot download a product image, including its “Unable to download the file” error, FORMA makes at most one budgeted retry with the already-read table and text. It reports that photos were not assessed. Closing the result persists for the product during the browser tab session; updates preserve the card instead of repeatedly removing it. Explicit Refresh can reopen it.
 
 Regression coverage includes the Farfetch body chart, SCRT Odessa transposed chart, early bookmarks and later evidence, W/L conflicts, popup fit actions and dismissal across reload. Browser tests use an isolated Chromium profile and stub AI; the side-panel opening API is stubbed for the popup-action test. They do not verify the user's running Chrome or live model output.
+
+### 1.3.3 updates
+
+The content reader now uses a guarded callback transport, consumes Chrome runtime errors, cancels outstanding work and disposes its observers/timers when its extension context is invalidated. The browser regression test reloads the real isolated extension while leaving a shop tab open and checks for uncaught page errors after subsequent DOM updates.
+
+**Show popup** reopens the completed result from the panel without an AI request. Closing the popup still keeps it dismissed until explicitly reopened; Refresh requests a new assessment. After updating an unpacked extension, reload already-open shop pages once. Existing error entries in Chrome's extension manager are historical until cleared.
+
+Validation: 128 automated tests, TypeScript check, build and isolated Chromium extension tests. Personal preferences stated in chat are not automatically written into the user's Chrome profile.

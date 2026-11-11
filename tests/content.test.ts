@@ -9,7 +9,7 @@ test('Manual activation reads a missed page, survives refresh, and resets on nav
  const location={href:'https://shop.test/archive'};
  Object.defineProperty(document,'URL',{get:()=>location.href});
  const sent:any[]=[];let refresh:(m:any,sender?:any,reply?:(v:any)=>void)=>void=()=>{};let checkURL:()=>void=()=>{};
- const globals={window,document,location,MutationObserver:class {observe(){}disconnect(){}},chrome:{runtime:{onMessage:{addListener:(fn:typeof refresh)=>refresh=fn,removeListener:()=>{}},sendMessage:async(m:any)=>{sent.push(m);return {};}}},setInterval:((fn:()=>void)=>{checkURL=fn;return 0;})};
+ const globals={window,document,location,MutationObserver:class {observe(){}disconnect(){}},chrome:{runtime:{id:'test-extension',onMessage:{addListener:(fn:typeof refresh)=>refresh=fn,removeListener:()=>{}},sendMessage:(m:any,reply:(value:any)=>void)=>{sent.push(m);reply({});}}},setInterval:((fn:()=>void)=>{checkURL=fn;return 0;})};
  const original=new Map(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
  for(const [k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true,writable:true});
  try{

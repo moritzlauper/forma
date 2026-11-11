@@ -1,3 +1,4 @@
+import {createRuntimeMessenger} from './runtime-messaging';
 import {mergeCharts,mergeListing} from './evidence-merge';
 import {productIdentity} from './good-fits';
 import type {Page} from './detect';
@@ -14,29 +15,30 @@ import {READER_PROTOCOL} from './page-connection';
  const dismissalKey='forma-dismissed-products';
  const dismissed=()=>{try{const value=JSON.parse(sessionStorage.getItem(dismissalKey)||'[]');return Array.isArray(value)?value.filter((u:unknown)=>typeof u==='string'):[] as string[];}catch{return [] as string[];}};
  const setDismissed=(url:string,value:boolean)=>{dismissedURL=value?productIdentity(url):'';try{const list=dismissed().filter(u=>u!==productIdentity(url));if(value)list.push(productIdentity(url));sessionStorage.setItem(dismissalKey,JSON.stringify(list.slice(-50)));}catch{}};
+ const messenger=createRuntimeMessenger(chrome.runtime,()=>dispose());
  async function safeScan(retry=false,fresh=false){try{await scan(retry,fresh);}catch(error){
   last='';host.remove();
   if(error instanceof Error&&/context invalidated/i.test(error.message)){dispose();return;}
   // sendMessage may throw synchronously after an extension reload; .catch()
   // on its return value cannot catch that. Stop the orphaned reader entirely.
-  try{await chrome.runtime.sendMessage({type:'page-error',name:document.querySelector('h1')?.textContent||document.title});}catch{dispose();}
+  try{await messenger.send({type:'page-error',name:document.querySelector('h1')?.textContent||document.title});}catch{dispose();}
  }}
  async function scan(retry=false,fresh=false){
-  if(disposed)return;
+  if(disposed||!messenger.alive())return;
   if(discovering){pendingRetry ||=retry;pendingFresh ||=fresh;return;}
   const url=location.href;
   if(retainedIdentity!==productIdentity(url)){retainedIdentity=productIdentity(url);retainedCharts=[];retainedEvidence=undefined;rendered='';last='';host.remove();}
   const detection=detectClothingPage(document);let manual=manualURL===url;
   if(detection.kind!=='clothing'&&!manual){
    const signature=JSON.stringify([url,detection]);if(signature===last)return;last=signature;seq++;host.remove();
-   await chrome.runtime.sendMessage({type:'page',name:detection.name,text:'',charts:[],images:[],detection,manual:false}).catch(()=>{});return;
+   await messenger.send({type:'page',name:detection.name,text:'',charts:[],images:[],detection,manual:false}).catch(()=>{});return;
   }
   if(guideURL!==url||retry){guideURL=url;attemptedGuides.clear();}
   discovering=true;
   let charts;
   try{
    if(!last||retry||fresh){
-    await chrome.runtime.sendMessage({type:'page-progress',name:detection.name,detection,manual});
+    await messenger.send({type:'page-progress',name:detection.name,detection,manual});
     charts=await discoverCharts(document,attemptedGuides);
    }else charts=collectCharts(document);
   }finally{
@@ -54,17 +56,20 @@ import {READER_PROTOCOL} from './page-connection';
   const signature=JSON.stringify([url,name,charts,photos,description,evidence,manual]);
   if(signature===last&&!retry&&!fresh)return;
   last=signature;const id=++seq;
-  try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,images:photos,text:description,evidence,retry,fresh,detection,manual});if(disposed||id!==seq||url!==location.href||!answer.result||(dismissedURL===productIdentity(url)||dismissed().includes(productIdentity(url))))return;
-   const presentation=JSON.stringify({...answer.result,cached:undefined});if(presentation===rendered&&host.isConnected)return;rendered=presentation;
-   card.replaceChildren();const close=document.createElement('button');close.type='button';close.className='close';close.textContent='×';close.setAttribute('aria-label','Close FORMA result');close.title='Close FORMA result';close.onclick=()=>{setDismissed(url,true);host.remove();};card.append(close);const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=answer.result.message;card.append(b,p);
-   if(answer.result.model){const source=document.createElement('small');source.textContent=answer.result.model+(answer.result.basis==='estimate'?' · tentative fit estimate':'')+(answer.result.cached?' · cached':'');card.append(source);}
-   if(answer.result.scores?.length){const scores=document.createElement('small');scores.textContent='Relative fit scores: '+answer.result.scores.filter((s:{overall:number|null})=>s.overall!==null).slice(0,3).map((s:{size:string;overall:number})=>`${s.size} ${s.overall}/100`).join(' · ');card.append(scores);}
-   if(answer.result.reasons?.length){const reasons=document.createElement('small');reasons.textContent=answer.result.reasons.slice(0,3).join(' · ');card.append(reasons);}
-   const row=answer.result.ranked?.[0];if(row){const small=document.createElement('small');small.textContent=row.details.map((d:{key:string;text:string})=>d.key+': '+d.text).join(' · ')+(row.available?'':' · sold out');card.append(small);}
-   const actions=document.createElement('nav');actions.setAttribute('aria-label','Record actual fit');
-   for(const [kind,label] of [['good','Save as good fit'],['bad','Bad fit']] as const){const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=async()=>{button.disabled=true;try{const response=await chrome.runtime.sendMessage({type:'open-fit-editor',kind});if(response?.error)throw Error(response.error);button.textContent=kind==='good'?'Saved · add details':'Add fit details';}catch{button.textContent='Could not open · retry';}finally{button.disabled=false;}};actions.append(button);}card.append(actions);
-   if(!host.isConnected)document.body.append(host);
+  try{const answer=await messenger.send({type:'page',name,charts,images:photos,text:description,evidence,retry,fresh,detection,manual});if(disposed||id!==seq||url!==location.href||!answer?.result||(dismissedURL===productIdentity(url)||dismissed().includes(productIdentity(url))))return;
+   renderResult(answer.result,url);
   }catch(error){throw error;}
+ }
+ function renderResult(result:any,url:string){
+   const presentation=JSON.stringify({...result,cached:undefined});if(presentation===rendered&&host.isConnected)return;rendered=presentation;
+   card.replaceChildren();const close=document.createElement('button');close.type='button';close.className='close';close.textContent='×';close.setAttribute('aria-label','Close FORMA result');close.title='Close FORMA result';close.onclick=()=>{setDismissed(url,true);host.remove();};card.append(close);const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=result.message;card.append(b,p);
+   if(result.model){const source=document.createElement('small');source.textContent=result.model+(result.basis==='estimate'?' · tentative fit estimate':'')+(result.cached?' · cached':'');card.append(source);}
+   if(result.scores?.length){const scores=document.createElement('small');scores.textContent='Relative fit scores: '+result.scores.filter((s:{overall:number|null})=>s.overall!==null).slice(0,3).map((s:{size:string;overall:number})=>`${s.size} ${s.overall}/100`).join(' · ');card.append(scores);}
+   if(result.reasons?.length){const reasons=document.createElement('small');reasons.textContent=result.reasons.slice(0,3).join(' · ');card.append(reasons);}
+   const row=result.ranked?.[0];if(row){const small=document.createElement('small');small.textContent=row.details.map((d:{key:string;text:string})=>d.key+': '+d.text).join(' · ')+(row.available?'':' · sold out');card.append(small);}
+   const actions=document.createElement('nav');actions.setAttribute('aria-label','Record actual fit');
+   for(const [kind,label] of [['good','Save as good fit'],['bad','Bad fit']] as const){const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=async()=>{button.disabled=true;try{const response=await messenger.send({type:'open-fit-editor',kind});if(!response?.ok)throw Error(response?.error||'Page connection ended.');button.textContent=kind==='good'?'Saved · add details':'Add fit details';}catch{button.textContent='Could not open · retry';}finally{button.disabled=false;}};actions.append(button);}card.append(actions);
+   if(!host.isConnected)document.body.append(host);
  }
  const observer=new MutationObserver(m=>{
   if(m.every(r=>r.target===host||(r.type==='childList'&&Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).every(n=>n===host))))return;
@@ -77,13 +82,14 @@ import {READER_PROTOCOL} from './page-connection';
  const onMessage=(m:any,_sender:chrome.runtime.MessageSender,reply:(response:unknown)=>void)=>{
   if(disposed)return;
   try{
+  if(m.type==='show-result'&&m.url===location.href&&typeof m.result?.message==='string'){setDismissed(location.href,false);renderResult(m.result,location.href);reply({shown:true});return;}
   if(m.type==='forma-ping'){reply({protocol:READER_PROTOCOL,url:location.href});return;}
   if(m.type==='refresh'){reply({accepted:true,url:location.href});if(m.force===true)manualURL=location.href;if(m.fresh||m.retry||m.reassess||m.force)last='';if(m.fresh||m.force)setDismissed(location.href,false);safeScan(m.retry===true,m.fresh===true);}
   }catch{dispose();}
  };
  chrome.runtime.onMessage.addListener(onMessage);
  const navigated=()=>{if(productIdentity(previousURL)!==productIdentity(location.href)){dismissedURL='';manualURL='';last='';rendered='';retainedCharts=[];retainedEvidence=undefined;host.remove();}previousURL=location.href;safeScan();};window.addEventListener('popstate',navigated);
- let previousURL=location.href;const interval=setInterval(()=>{if(previousURL!==location.href){seq++;navigated();}},500);
- function dispose(){disposed=true;seq++;observer.disconnect();clearTimeout(timer);clearInterval(interval);host.remove();window.removeEventListener('popstate',navigated);try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}
+ let previousURL=location.href;const interval=setInterval(()=>{if(!messenger.alive())return;if(previousURL!==location.href){seq++;navigated();}},500);
+ function dispose(){if(disposed)return;disposed=true;seq++;messenger.close();for(const cleanup of [()=>observer.disconnect(),()=>clearTimeout(timer),()=>clearInterval(interval),()=>host.remove(),()=>window.removeEventListener('popstate',navigated),()=>chrome.runtime.onMessage.removeListener(onMessage)])try{cleanup();}catch{}}
  w.formaReader={protocol:READER_PROTOCOL,dispose};safeScan();
 })();

@@ -115,6 +115,9 @@ try{
  await shop.locator('#forma-fit-card').waitFor({state:'detached'});
  await shop.locator('#clock').evaluate(e=>e.textContent='changed after close');await panel.waitForTimeout(800);
  assert.equal(await shop.locator('#forma-fit-card').count(),0);assert.equal(await worker.evaluate(()=>globalThis.testRequests),stableRequests);
+ await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Show popup').click());
+ await shop.locator('#forma-fit-card').waitFor();assert.equal(await worker.evaluate(()=>globalThis.testRequests),stableRequests,'Showing a saved popup uses zero AI requests');
+ const reopened=await shop.locator('#forma-fit-card').boundingBox();await shop.mouse.click(reopened.x+reopened.width-23,reopened.y+21);
  await shop.reload();await shop.bringToFront();await panel.waitForTimeout(1200);
  assert.equal(await shop.locator('#forma-fit-card').count(),0,'Dismissal survives reader reinjection and reload');
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
@@ -155,5 +158,12 @@ try{
  await panel.waitForFunction(async()=> (await chrome.storage.local.get('profile')).profile.context.shoeSizeEU==='45');
  assert.deepEqual(errors,[]);
  if(process.env.FORMA_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});
- console.log(JSON.stringify({result:'passed',transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
+ // Invalidate the real isolated extension while keeping its shop tab open.
+ const shopErrors=[];shop.on('pageerror',error=>shopErrors.push(error.message));
+ await worker.evaluate(()=>chrome.runtime.reload()).catch(()=>{});
+ await shop.waitForTimeout(1000);
+ for(let i=0;i<3;i++){await shop.evaluate(i=>document.querySelector('h1').textContent='Odessa Jeans '+i,i);await shop.waitForTimeout(700);}
+ assert.equal(await shop.locator('#forma-fit-card').count(),0,'An invalidated reader disposes its popup');
+ assert.deepEqual(shopErrors,[],'Reload must not leave uncaught context invalidation errors');
+ console.log(JSON.stringify({result:'passed',reopenPopupWithoutAI:true,realExtensionReloadWithoutUncaughtErrors:true,transposedMeasurementsReachAI:true,popupFitActions:true,popupDismissalSurvivesReload:true,unitlessGuideEstimate:true,modelSizeFallback:true,sourceHTMLFallback:true,noMutationRefreshLoop:true,dismissableResult:true,automaticReaderInjection:true,lazySizingClicks:1,parsedWaist:46,parsedLength:112,freshRefresh:true,automaticCacheReuse:true,bookmarkUsesNoAI:true,evidenceSaved:true,allShopsEnabledFromExtensionPage:true,shoeSizeSaved:true,lowerBodyTableRead:true,analysedButtonDisabled:true,optionalSizeAndReasonSaved:true,futureAssessmentUsesSavedExample:true,germanModalOpens:true,conversionNotCentimetres:true,knownFitWithoutChart:true,rejectedPhotoRecovery:true,retryCountedInBudget:true,panelErrors:errors}));
 }finally{await context.close();await rm(temp,{recursive:true,force:true});}

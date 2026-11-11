@@ -121,7 +121,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   if(revisions.get(tab)!==revision){reply({url:page.url,stale:true});return;}
   await chrome.storage.session.set({['page:'+tab]:{...page,product,result,reason:found.reason,assessment}});
   const message=assessment?assessment.status==='ready'?assessment.review!.summary:assessment.error||'AI is reviewing your fit…':result?.message||found.reason;
-  reply({url:page.url,result:assessment?{message,ranked:[],size:assessment.review?.size,scores:assessment.review?.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible})),reasons:assessment.review?.reasons||[],basis:assessment.review?.basis,model:assessment.model,cached:assessment.cached}:result||{message,ranked:[]}});
+  reply({url:page.url,result:assessment?{message,ranked:[],status:assessment.status,size:assessment.review?.size,scores:assessment.review?.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible})),reasons:assessment.review?.reasons||[],basis:assessment.review?.basis,model:assessment.model,cached:assessment.cached}:result||{message,ranked:[]}});
 
  })().catch(async()=>{
   if(revisions.get(tab)===revision)await chrome.storage.session.set({['page:'+tab]:{url:sender.url||'',name:String(msg.name||'').slice(0,200),text:'',charts:[],product:null,result:null,scan:{status:'error',at:Date.now(),error:'The assessment could not start. Press Refresh to reconnect.'}}}).catch(()=>{});

@@ -58,7 +58,7 @@ try{
  assert.equal(await shop.evaluate(()=>window.guideClicks),1);
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),1);
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
- await panel.getByText('Test assessment completed #2',{exact:true}).waitFor({timeout:10000});
+ await panel.getByText('Test assessment completed #2',{exact:true}).waitFor({state:'attached',timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),2);
  await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.tabs.sendMessage(tab.id,{type:'refresh',reassess:true});});
  await panel.getByText('AI ASSESSMENT · CACHED',{exact:true}).waitFor({timeout:10000});
@@ -67,7 +67,7 @@ try{
  // matching guard, but no live message listener. Refresh must repair it.
  await worker.evaluate(async()=>{const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>{window.formaReader.dispose();window.formaReader={protocol:'forma-reader-v2',dispose(){throw Error('Extension context invalidated');}};}});});
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh').click());
- await panel.getByText('Test assessment completed #3',{exact:true}).waitFor({timeout:10000});
+ await panel.getByText('Test assessment completed #3',{exact:true}).waitFor({state:'attached',timeout:10000});
  assert.equal(await worker.evaluate(()=>globalThis.testRequests),3);
  const beforeSave=await worker.evaluate(()=>globalThis.testRequests);
  await panel.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='☆ Save as a good fit').click());
@@ -91,13 +91,13 @@ try{
  await shop.goto('http://127.0.0.1:43119/products/denim-shorts');await shop.bringToFront();
  await panel.getByRole('heading',{name:'Your recorded fit: L',exact:true}).waitFor({timeout:15000});
  await panel.getByText('No product photos assessed. Visual cut and hem details may be unknown.',{exact:true}).waitFor();
- await panel.getByText('The AI service could not process the product photos. This assessment used text and sizing only.',{exact:true}).waitFor();
+ await panel.getByText('The AI service could not process the product photos. This assessment used text and sizing only.',{exact:true}).waitFor({state:'attached'});
  const shortsInput=await worker.evaluate(()=>globalThis.testInput);
  assert.equal(shortsInput.product.parsed,null);assert.equal(shortsInput.product.conversions.length,1);assert.equal(shortsInput.product.conversions[0].rows[0][1],'L');
  assert.equal(await shop.evaluate(()=>window.guideClicks),1);assert.equal(await worker.evaluate(()=>globalThis.shortsRequests),2);
  assert.equal(await worker.evaluate(async()=> (await chrome.storage.local.get('aiCount')).aiCount),await worker.evaluate(()=>globalThis.testRequests));
  await shop.goto('http://127.0.0.1:43119/products/body-shorts');await shop.bringToFront();
- await panel.getByText('Body guide captured.',{exact:true}).waitFor({timeout:15000});
+ await panel.getByText('Body guide captured.',{exact:true}).waitFor({state:'attached',timeout:15000});
  const bodyInput=await worker.evaluate(()=>globalThis.testInput);
  assert.equal(bodyInput.product.charts.length,2);assert.equal(bodyInput.product.parsed.measurementType,'body');assert.deepEqual(bodyInput.product.parsed.sizes[0].measures.waist,[58.5,61]);
  assert.equal(await panel.getByRole('button',{name:'✓ Analysed',exact:true}).isDisabled(),true);
@@ -169,6 +169,15 @@ try{
  await panel.getByText('Compare sizes',{exact:true}).waitFor();
  await panel.locator('.fit-score').filter({hasText:/Good fit|Very good fit/}).waitFor();
  assert.doesNotMatch(await panel.locator('.fit-score').innerText(),/\/100/);
+ const explanation=panel.locator('.verdict details');assert.equal(await explanation.getAttribute('open'),null);
+ await explanation.locator('summary').click();assert.notEqual(await explanation.getAttribute('open'),null);await explanation.locator('summary').click();
+ const beforeDrag=await shop.locator('#forma-fit-card').boundingBox();
+ await shop.mouse.move(beforeDrag.x+65,beforeDrag.y+25);await shop.mouse.down();await shop.mouse.move(beforeDrag.x-85,beforeDrag.y-75,{steps:8});await shop.mouse.up();
+ const afterDrag=await shop.locator('#forma-fit-card').boundingBox();assert.ok(afterDrag.x<beforeDrag.x-100);assert.ok(afterDrag.y<beforeDrag.y-50);
+ const requestsBeforeMove=await worker.evaluate(()=>globalThis.testRequests);
+ await shop.mouse.move(afterDrag.x+65,afterDrag.y+25);await shop.mouse.down();await shop.mouse.move(-500,-500,{steps:8});await shop.mouse.up();
+ const clamped=await shop.locator('#forma-fit-card').boundingBox();assert.ok(clamped.x>=0&&clamped.y>=0,'Dragged popup stays reachable');assert.equal(await worker.evaluate(()=>globalThis.testRequests),requestsBeforeMove);
+
  if(process.env.FORMA_FIT_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.locator('.fit-score').scrollIntoViewIfNeeded();await panel.screenshot({path:process.env.FORMA_FIT_SCREENSHOT});await shop.screenshot({path:process.env.FORMA_FIT_SCREENSHOT.replace('.png','-popup.png')});}
  assert.equal(odessaInput.product.parsed,null);assert.equal(odessaInput.product.measurementTables[0].rows.length,6);
  assert.equal(odessaInput.product.measurementTables[0].rows[4][2],'107');assert.equal(odessaInput.decision.canSelectSize,true);

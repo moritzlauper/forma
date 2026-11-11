@@ -142,4 +142,6 @@ Response budgets scale with the chart size count. A token-limited answer gets at
 
 A lifecycle handler disposes a disconnected reader and handles late “Extension context invalidated” promise rejections only when its own runtime is gone. Live-context errors and unrelated failures remain visible. Browser regression coverage now includes an in-flight request during reload and late rejection delivery in the isolated content-script world. Source maps improve future error locations. The specific reported live Chrome occurrence could not be reproduced directly.
 
-Validation: 141 automated tests, TypeScript/build checks, isolated Chromium tests with simulated AI, and narrow-panel/popup visual inspection. No live model fit prediction was verified.
+Validation: 142 automated tests, TypeScript/build checks, isolated Chromium tests with simulated AI, and narrow-panel/popup visual inspection. No live model fit prediction was verified.
+
+The popup summary and detailed reasoning are collapsible. Drag the FORMA header to reposition it, or focus it and use arrow keys. Position persists while using the page; viewport and content-size changes keep the card reachable.

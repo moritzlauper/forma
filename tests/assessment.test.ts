@@ -45,3 +45,8 @@ test('Photo recovery respects the request limit and never loops on a second fail
  const input=inputForReview({...page,images:['https://shop.test/photo.jpg']},product,profile,[]);
  try{await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>false),/limit prevents/);assert.equal(calls,1);calls=0;await assert.rejects(requestReview(input,'anthropic','test','fake',async()=>true),/Could not process image/);assert.equal(calls,2);}finally{globalThis.fetch=previous;}
 });
+test('Farfetch file-download error retries with the already scraped table and no photos',async()=>{
+ const previous=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(_url,init)=>{calls++;const body=JSON.parse(String(init?.body));if(calls===1)return new Response(JSON.stringify({error:{message:'Unable to download the file. Please verify the URL and try again.'}}),{status:400});const input=JSON.parse(body.messages[0].content);assert.deepEqual(input.product.charts,page.charts);assert.deepEqual(input.product.images,[]);return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Table retained',reasons:[],limitations:[]})}]}));};
+ try{const review=await requestReview(inputForReview({...page,images:['https://cdn.test/jacket.jpg']},product,profile,[]),'anthropic','test','fake',async()=>true);assert.equal(calls,2);assert.equal(review.imageCount,0);}finally{globalThis.fetch=previous;}
+});

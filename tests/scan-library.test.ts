@@ -23,3 +23,12 @@ test('A later body table enriches an existing bookmark without erasing its actua
  const records=recordScan([],{...page,charts:[...original.charts,{text:'EU;INT;TAILLENUMFANG\n50;L;84\n50;L;88',context:'Körpermasse cm'}]},body,200);
  const [updated]=enrichGoodFits([original],records);assert.equal(updated.charts?.length,2);assert.equal(updated.product?.measurementType,'body');assert.equal(updated.evidenceObservedAt,200);assert.equal(updated.size,'L');assert.equal(updated.reason,'Good length');
 });
+test('A bookmark made before scanning gains later evidence, including richer scans, while preserving edits',()=>{
+ const first={...page,charts:[],images:[],evidence:{sizes:['33 x 32'],models:[],fit:[],sourceHTML:''}};
+ const bookmark={url:page.url,name:page.name,category:null,product:null,size:'33 x 32',reason:'Perfect waist and length',savedAt:1};
+ const early=enrichGoodFits([bookmark],recordScan([],first,null,10));
+ const later={...page,evidence:{sizes:['33 x 32','34 x 32'],models:[{heightCm:186,size:'32 x 32',quote:'Model wears 32 x 32'}],fit:['baggy'],sourceHTML:'<p>Baggy jeans</p>'}};
+ const scans=recordScan(recordScan([],first,null,10),later,product,20);const [saved]=enrichGoodFits(early,scans);
+ assert.equal(saved.size,'33 x 32');assert.equal(saved.reason,bookmark.reason);assert.equal(saved.product?.sizes[0].measures.waist,46);assert.equal(saved.evidence?.models[0].heightCm,186);assert.equal(saved.images?.length,1);assert.equal(saved.category,'trousers');assert.equal(saved.evidenceObservedAt,20);
+ assert.deepEqual(enrichGoodFits([saved],scans),[saved]);
+});

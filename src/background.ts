@@ -2,7 +2,7 @@ import {recommend,validateProduct,type Profile,type Product} from './fit';
 import {detect,type Page} from './detect';
 import {inputForReview,requestReview,type Assessment,type Feedback} from './assessment';
 import {createRequestBudget} from './request-budget';
-import type {GoodFit} from './good-fits';
+import {saveGoodFit,productIdentity,type GoodFit} from './good-fits';
 import {recordScan,enrichGoodFits,type ScanRecord} from './scan-library';
 const flights=new Map<string,Promise<Assessment>>();
 const settled=new Set<string>();
@@ -19,6 +19,38 @@ chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
 chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
+ if(msg.type==='open-fit-editor'){
+  if(!sender.tab?.id||sender.frameId&&sender.frameId!==0||!['good','bad'].includes(msg.kind))return;
+  const tabId=sender.tab.id;
+  // Invoke immediately while Chrome still associates this message with the click.
+  const opened=chrome.sidePanel.open({tabId});
+  const job=scanQueue.then(async()=>{
+   const data=await chrome.storage.session.get('page:'+tabId);const page=data['page:'+tabId] as Page&{product:Product|null}|undefined;
+   if(!page||productIdentity(page.url)!==productIdentity(sender.url||''))throw Error('Read this product first.');
+   if(msg.kind==='good'){
+    const data=await chrome.storage.local.get(['goodFits','scanLibrary']);const entries=(data.goodFits||[]) as GoodFit[];
+    const previous=entries.find(e=>productIdentity(e.url)===productIdentity(page.url));
+    const entry=previous||{url:page.url,name:page.name,size:'',reason:'',savedAt:Date.now(),category:page.product?.category||page.detection?.category||null,product:page.product,charts:page.charts,images:page.images,evidence:page.evidence,description:page.text};
+    await chrome.storage.local.set({goodFits:saveGoodFit(entries,enrichGoodFits([entry],(data.scanLibrary||[]) as ScanRecord[])[0])});
+   }
+   await chrome.storage.session.set({['fit-editor:'+tabId]:{kind:msg.kind,url:page.url,id:crypto.randomUUID()}});
+  });scanQueue=job.catch(()=>{});
+  Promise.all([opened,job]).then(()=>reply({ok:true})).catch(()=>reply({error:'Could not open fit details. Open FORMA from its toolbar icon.'}));return true;
+ }
+ if(msg.type==='save-good-fit'||msg.type==='remove-good-fit'){
+  if(sender.url!==chrome.runtime.getURL('index.html'))return;
+  const job=scanQueue.then(async()=>{
+   const data=await chrome.storage.local.get(['goodFits','scanLibrary']);const entries=Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[];const scans=Array.isArray(data.scanLibrary)?data.scanLibrary as ScanRecord[]:[];
+   let next:GoodFit[];
+   if(msg.type==='remove-good-fit')next=entries.filter(e=>productIdentity(e.url)!==productIdentity(String(msg.url||'')));
+   else{
+    const entry=msg.entry as GoodFit;if(!entry||typeof entry.url!=='string'||!/^https?:/.test(entry.url)||typeof entry.name!=='string'||typeof entry.size!=='string'||typeof entry.reason!=='string')throw Error('Invalid saved fit.');
+    const previous=entries.find(e=>productIdentity(e.url)===productIdentity(entry.url));
+    const merged=enrichGoodFits([{...previous,...entry}],scans)[0];next=saveGoodFit(entries,merged);
+   }
+   await chrome.storage.local.set({goodFits:next});return {goodFits:next};
+  });scanQueue=job.catch(()=>{});job.then(reply).catch(()=>reply({error:'Could not save your good fit. Please retry.'}));return true;
+ }
  if(msg.type==='reserve-ai-request'){
   if(sender.tab||sender.url!==chrome.runtime.getURL('index.html'))return;
   reserveRequest().then(reply).catch(()=>reply({error:'Could not read the request budget.'}));return true;
@@ -58,7 +90,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,data.profile as Profile,(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v13|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v15|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);

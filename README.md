@@ -91,3 +91,15 @@ The Chromium extension smoke test starts with an already-open product and no rea
 - [Chrome Storage](https://developer.chrome.com/docs/extensions/reference/api/storage)
 - [Ollama Chat](https://docs.ollama.com/api/chat)
 - [Claude vision input](https://platform.claude.com/docs/en/build-with-claude/vision)
+
+### 1.3.2 updates
+
+The floating result offers **Save as good fit** and **Bad fit**, opening the panel at the corresponding editor. Good-fit bookmarks reuse the scan without an AI request; evidence arriving after bookmarking enriches the same entry while retaining the worn size and notes. Negative fit details require the size actually tried.
+
+Known good-fit waist/length labels take priority over generic waist ranges for label-only estimates. An incompatible W29 option cannot become a recommendation merely because it is the only option read. Comparisons across garments remain estimates.
+
+Transposed measurement tables (sizes across columns) are retained as structured rows even if the shop does not specify flat width versus circumference. This ambiguity does not make the table unreadable or prevent using its size labels and relative changes. Published header units take priority over unrelated model-size units in surrounding text. Unresolved conventions are not stored as verified circumferences. Empty AI fit explanations are rejected.
+
+If Anthropic cannot download a product image, including its “Unable to download the file” error, FORMA makes at most one budgeted retry with the already-read table and text. It reports that photos were not assessed. Closing the result persists for the product during the browser tab session; updates preserve the card instead of repeatedly removing it. Explicit Refresh can reopen it.
+
+Regression coverage includes the Farfetch body chart, SCRT Odessa transposed chart, early bookmarks and later evidence, W/L conflicts, popup fit actions and dismissal across reload. Browser tests use an isolated Chromium profile and stub AI; the side-panel opening API is stubbed for the popup-action test. They do not verify the user's running Chrome or live model output.

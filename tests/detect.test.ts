@@ -22,3 +22,7 @@ test('XXL transposed headers work and unrelated tables are ignored',()=>{
  assert.equal(isSizeChart(';XL;XXL\nPIT TO PIT (CM);64;67'),true);
  assert.equal(isSizeChart(';XS;M\nShipping price;4;6'),false);
 });
+test('Farfetch body-size ranges with Europe and Standardgröße headers remain usable',()=>{
+ const result=detect({...page,name:'Carhartt WIP Kylan Liner Jacke',charts:[{text:'Europe;Standardgröße;Chest (cm);Waist (cm)\n44;XS;76–81;61–66\n46;S;86–91;71–76\n48;M;97–102;81–86\n50;L;107–112;91–97\n52;XL;117–122;102–107',context:'Größentabelle mit Körpermaßen CM'}]});
+ assert.ok(result.product,result.reason);assert.equal(result.product.measurementType,'body');assert.equal(result.product.unit,'cm');assert.deepEqual(result.product.sizes.find(s=>s.label==='M')?.measures.chest,[97,102]);
+});

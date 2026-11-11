@@ -5,7 +5,7 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
  const session:Record<string,any>={};let listener:Function=()=>{};let storageListener:Function=()=>{};let calls=0;
  const area=(data:Record<string,unknown>)=>({setAccessLevel:async()=>{},get:async(keys:string|string[])=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k=>[k,data[k]])),set:async(p:Record<string,unknown>)=>Object.assign(data,p)});
  const previousFetch=globalThis.fetch;
- (globalThis as any).chrome={storage:{local:area(local),session:area(session),onChanged:{addListener:(fn:Function)=>storageListener=fn}},tabs:{query:async()=>[]},sidePanel:{setPanelBehavior:()=>{}},runtime:{getURL:(path:string)=>'chrome-extension://test/'+path,onMessage:{addListener:(fn:Function)=>listener=fn}},permissions:{contains:async()=>true,onRemoved:{addListener:()=>{}}}};
+ (globalThis as any).chrome={storage:{local:area(local),session:area(session),onChanged:{addListener:(fn:Function)=>storageListener=fn}},tabs:{query:async()=>[]},sidePanel:{setPanelBehavior:()=>{},open:async()=>{}},runtime:{getURL:(path:string)=>'chrome-extension://test/'+path,onMessage:{addListener:(fn:Function)=>listener=fn}},permissions:{contains:async()=>true,onRemoved:{addListener:()=>{}}}};
  globalThis.fetch=async(_url,init)=>{calls++;const input=JSON.parse(JSON.parse(String(init?.body)).messages[0].content);assert.equal(input.profile.description,local.description);assert.equal(input.profile.measures.chest,undefined);assert.equal(input.decision.canSelectSize,false);return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Need measured evidence for this hoodie',reasons:['Cut and length matter'],limitations:['Sleeves unknown']})}]}));};
  try{
   await import('../src/background');
@@ -57,6 +57,12 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   globalThis.fetch=async()=>{calls++;freshStarted();return freshResponse;};
   const a=fresh();await freshStart;const b=fresh();await new Promise(resolve=>setTimeout(resolve,10));finishFresh();
   const answers=await Promise.all([a,b]);assert.equal(calls,8);assert.equal(local.aiCount,106);assert.ok(answers.some(v=>v.result?.cached===false));assert.ok(answers.every(v=>v.stale||v.result?.cached===false));
+  const beforeBookmark=calls;
+  const saved=await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'good'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));
+  assert.equal(saved.ok,true);assert.equal(calls,beforeBookmark);assert.equal((local.goodFits as any[])[0].url,'https://example.test/archive');assert.equal(session['fit-editor:1'].kind,'good');
+  const edit=await new Promise<any>(resolve=>listener({type:'save-good-fit',entry:{...(local.goodFits as any[])[0],size:'L',reason:'Great sleeves'}},{tab:{id:99},url:'chrome-extension://test/index.html'},resolve));assert.equal(edit.goodFits[0].size,'L');
+  await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'good'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));assert.equal((local.goodFits as any[])[0].size,'L');assert.equal((local.goodFits as any[])[0].reason,'Great sleeves');
+  await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'bad'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));assert.equal(session['fit-editor:1'].kind,'bad');assert.equal(calls,beforeBookmark);
   await new Promise<any>(resolve=>listener({type:'page-error',name:'Unreadable product'},{tab:{id:1},url:'https://example.test/error'},resolve));
   assert.equal(session['page:1'].scan.status,'error');assert.equal(calls,8);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}

@@ -1,3 +1,6 @@
+import {mergeCharts,mergeListing} from './evidence-merge';
+import {productIdentity} from './good-fits';
+import type {Page} from './detect';
 import {discoverCharts,collectCharts,collectProductImages,productText} from './page-discovery';
 import {collectProductEvidence} from './product-evidence';
 import {detectClothingPage} from './product-page';
@@ -5,9 +8,12 @@ import {READER_PROTOCOL} from './page-connection';
 (()=>{
  const w=window as unknown as {formaReader?:{protocol:string;dispose:()=>void}};if(w.formaReader?.protocol===READER_PROTOCOL)return;try{w.formaReader?.dispose();}catch{}
  const host=document.createElement('div');host.id='forma-fit-card';const shadow=host.attachShadow({mode:'closed'});
- const style=document.createElement('style');style.textContent=':host{position:fixed;bottom:18px;right:18px;z-index:2147483647;font:14px/1.5 system-ui;color:#251e32}article{position:relative;max-width:290px;background:#ece7f3;border:1px solid #8d859e;box-shadow:3px 3px #251e3222;padding:16px}b{color:#6d3fd1;letter-spacing:2px}p{margin:8px 0 0}small{display:block;margin-top:8px}button{position:absolute;right:8px;top:6px;width:30px;height:30px;border:0;background:transparent;color:#251e32;font:24px system-ui;cursor:pointer}button:focus-visible{outline:2px solid #6d3fd1}b{display:block;padding-right:28px}';shadow.append(style);
+ const style=document.createElement('style');style.textContent=':host{position:fixed;bottom:18px;right:18px;z-index:2147483647;font:14px/1.5 system-ui;color:#251e32}article{position:relative;max-width:290px;max-height:calc(100vh - 70px);overflow:auto;background:#ece7f3;border:1px solid #8d859e;box-shadow:3px 3px #251e3222;padding:16px}b{color:#6d3fd1;letter-spacing:2px}p{margin:8px 0 0}small{display:block;margin-top:8px}.close{position:absolute;right:8px;top:6px;width:30px;height:30px;border:0;background:transparent;color:#251e32;font:24px system-ui;cursor:pointer}nav{display:flex;gap:8px;margin-top:12px}nav button{padding:7px 10px;border:1px solid #8d859e;background:transparent;color:inherit;cursor:pointer}button:focus-visible{outline:2px solid #6d3fd1}b{display:block;padding-right:28px}';shadow.append(style);
  const card=document.createElement('article');shadow.append(card);let timer:ReturnType<typeof setTimeout>;let last='';let seq=0;let discovering=false;let pendingRetry=false;let pendingFresh=false;let guideURL='';let manualURL='';const attemptedGuides=new Set<HTMLElement>();
- let disposed=false;let dismissedURL='';
+ let disposed=false;let dismissedURL='';let retainedCharts:Page['charts']=[];let retainedEvidence:Page['evidence'];let rendered='';let retainedIdentity=productIdentity(location.href);
+ const dismissalKey='forma-dismissed-products';
+ const dismissed=()=>{try{const value=JSON.parse(sessionStorage.getItem(dismissalKey)||'[]');return Array.isArray(value)?value.filter((u:unknown)=>typeof u==='string'):[] as string[];}catch{return [] as string[];}};
+ const setDismissed=(url:string,value:boolean)=>{dismissedURL=value?productIdentity(url):'';try{const list=dismissed().filter(u=>u!==productIdentity(url));if(value)list.push(productIdentity(url));sessionStorage.setItem(dismissalKey,JSON.stringify(list.slice(-50)));}catch{}};
  async function safeScan(retry=false,fresh=false){try{await scan(retry,fresh);}catch(error){
   last='';host.remove();
   if(error instanceof Error&&/context invalidated/i.test(error.message)){dispose();return;}
@@ -19,6 +25,7 @@ import {READER_PROTOCOL} from './page-connection';
   if(disposed)return;
   if(discovering){pendingRetry ||=retry;pendingFresh ||=fresh;return;}
   const url=location.href;
+  if(retainedIdentity!==productIdentity(url)){retainedIdentity=productIdentity(url);retainedCharts=[];retainedEvidence=undefined;rendered='';last='';host.remove();}
   const detection=detectClothingPage(document);let manual=manualURL===url;
   if(detection.kind!=='clothing'&&!manual){
    const signature=JSON.stringify([url,detection]);if(signature===last)return;last=signature;seq++;host.remove();
@@ -42,18 +49,22 @@ import {READER_PROTOCOL} from './page-connection';
   const name=detection.name;
   const photos=collectProductImages(document);
   const description=productText(document);
-  const evidence=collectProductEvidence(document);
+  charts=mergeCharts(retainedCharts,charts);retainedCharts=charts;
+  const evidence=mergeListing(retainedEvidence,collectProductEvidence(document));retainedEvidence=evidence;
   const signature=JSON.stringify([url,name,charts,photos,description,evidence,manual]);
   if(signature===last&&!retry&&!fresh)return;
-  last=signature;const id=++seq;host.remove();
-  try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,images:photos,text:description,evidence,retry,fresh,detection,manual});if(disposed||id!==seq||url!==location.href||!answer.result||dismissedURL===url)return;
-   card.replaceChildren();const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Close FORMA result');close.title='Close FORMA result';close.onclick=()=>{dismissedURL=url;host.remove();};card.append(close);const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=answer.result.message;card.append(b,p);
+  last=signature;const id=++seq;
+  try{const answer=await chrome.runtime.sendMessage({type:'page',name,charts,images:photos,text:description,evidence,retry,fresh,detection,manual});if(disposed||id!==seq||url!==location.href||!answer.result||(dismissedURL===productIdentity(url)||dismissed().includes(productIdentity(url))))return;
+   const presentation=JSON.stringify({...answer.result,cached:undefined});if(presentation===rendered&&host.isConnected)return;rendered=presentation;
+   card.replaceChildren();const close=document.createElement('button');close.type='button';close.className='close';close.textContent='×';close.setAttribute('aria-label','Close FORMA result');close.title='Close FORMA result';close.onclick=()=>{setDismissed(url,true);host.remove();};card.append(close);const b=document.createElement('b');b.textContent='FORMA';const p=document.createElement('p');p.textContent=answer.result.message;card.append(b,p);
    if(answer.result.model){const source=document.createElement('small');source.textContent=answer.result.model+(answer.result.basis==='estimate'?' · tentative fit estimate':'')+(answer.result.cached?' · cached':'');card.append(source);}
    if(answer.result.scores?.length){const scores=document.createElement('small');scores.textContent='Relative fit scores: '+answer.result.scores.filter((s:{overall:number|null})=>s.overall!==null).slice(0,3).map((s:{size:string;overall:number})=>`${s.size} ${s.overall}/100`).join(' · ');card.append(scores);}
    if(answer.result.reasons?.length){const reasons=document.createElement('small');reasons.textContent=answer.result.reasons.slice(0,3).join(' · ');card.append(reasons);}
    const row=answer.result.ranked?.[0];if(row){const small=document.createElement('small');small.textContent=row.details.map((d:{key:string;text:string})=>d.key+': '+d.text).join(' · ')+(row.available?'':' · sold out');card.append(small);}
-   document.body.append(host);
-  }catch{throw Error('Page connection interrupted.');}
+   const actions=document.createElement('nav');actions.setAttribute('aria-label','Record actual fit');
+   for(const [kind,label] of [['good','Save as good fit'],['bad','Bad fit']] as const){const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=async()=>{button.disabled=true;try{const response=await chrome.runtime.sendMessage({type:'open-fit-editor',kind});if(response?.error)throw Error(response.error);button.textContent=kind==='good'?'Saved · add details':'Add fit details';}catch{button.textContent='Could not open · retry';}finally{button.disabled=false;}};actions.append(button);}card.append(actions);
+   if(!host.isConnected)document.body.append(host);
+  }catch(error){throw error;}
  }
  const observer=new MutationObserver(m=>{
   if(m.every(r=>r.target===host||(r.type==='childList'&&Array.from(r.addedNodes).concat(Array.from(r.removedNodes)).every(n=>n===host))))return;
@@ -67,12 +78,12 @@ import {READER_PROTOCOL} from './page-connection';
   if(disposed)return;
   try{
   if(m.type==='forma-ping'){reply({protocol:READER_PROTOCOL,url:location.href});return;}
-  if(m.type==='refresh'){reply({accepted:true,url:location.href});if(m.force===true)manualURL=location.href;if(m.fresh||m.retry||m.reassess||m.force)last='';if(m.fresh||m.force)dismissedURL='';safeScan(m.retry===true,m.fresh===true);}
+  if(m.type==='refresh'){reply({accepted:true,url:location.href});if(m.force===true)manualURL=location.href;if(m.fresh||m.retry||m.reassess||m.force)last='';if(m.fresh||m.force)setDismissed(location.href,false);safeScan(m.retry===true,m.fresh===true);}
   }catch{dispose();}
  };
  chrome.runtime.onMessage.addListener(onMessage);
- const navigated=()=>{dismissedURL='';manualURL='';last='';host.remove();safeScan();};window.addEventListener('popstate',navigated);
- let previousURL=location.href;const interval=setInterval(()=>{if(previousURL!==location.href){previousURL=location.href;dismissedURL='';manualURL='';last='';seq++;host.remove();safeScan();}},500);
+ const navigated=()=>{if(productIdentity(previousURL)!==productIdentity(location.href)){dismissedURL='';manualURL='';last='';rendered='';retainedCharts=[];retainedEvidence=undefined;host.remove();}previousURL=location.href;safeScan();};window.addEventListener('popstate',navigated);
+ let previousURL=location.href;const interval=setInterval(()=>{if(previousURL!==location.href){seq++;navigated();}},500);
  function dispose(){disposed=true;seq++;observer.disconnect();clearTimeout(timer);clearInterval(interval);host.remove();window.removeEventListener('popstate',navigated);try{chrome.runtime.onMessage.removeListener(onMessage);}catch{}}
  w.formaReader={protocol:READER_PROTOCOL,dispose};safeScan();
 })();

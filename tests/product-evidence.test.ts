@@ -37,3 +37,22 @@ test('Product JSON-LD supplies hidden size variants without leaking arbitrary sc
  const evidence=collectProductEvidence(doc('<main><h1>Box Hoodie</h1><select><option>XS</option><option>XL</option></select></main><script type="application/ld+json">'+JSON.stringify({'@type':'ProductGroup',name:'Box Hoodie',description:'The model is 186 cm tall and wears size XL. Loose fit.',token:'SECRET',hasVariant:[{size:'XL',account:'PRIVATE'},{size:'XXL'}],isRelatedTo:{'@type':'Product',name:'Other Hoodie',size:'S'}})+'</script>'));
  assert.deepEqual(evidence.sizes,['XS','XL','XXL']);assert.equal(evidence.models[0]?.size,'XL');assert.match(evidence.sourceHTML,/Product JSON-LD fields/);assert.doesNotMatch(evidence.sourceHTML,/SECRET|PRIVATE|Other Hoodie/);
 });
+
+test('Known good-fit W/L wins over generic upsizing; incompatible only option is never recommended',()=>{
+ const evidence={sizes:['29 x 32','33 x 32','34 x 32'],models:[],fit:['baggy'],sourceHTML:''};
+ const jeans={...page,name:'Astro Jeans',charts:[],evidence};
+ const known={url:'https://other.test/jeans',name:'Known jeans',category:'trousers' as const,product:null,size:'33 x 32',reason:'Perfect',savedAt:1};
+ const input=inputForReview(jeans,null,profile,[],'',[known]);
+ assert.deepEqual(input.decision.eligibleSizes,['33 x 32']);
+ assert.equal(validateReview({...result,size:'34 x 32'},null,input).size,'33 x 32');
+ const only=inputForReview({...jeans,evidence:{...evidence,sizes:['29 x 32']}},null,profile,[]);
+ assert.equal(validateReview({...result,size:'29 x 32'},null,only).size,null);
+});
+test('SCRT Odessa transposed waist/length table supplies usable sizes even without a width convention',()=>{
+ const odessa={url:'https://shop.test/odessa',name:'Odessa Pleated Selvedge Jeans - Blackout',text:"Wide fit with slight bootcut. The model is 6'1 and wears size 32.",charts:[{text:';26;28;30;32;34;36\nWAIST (CM);36;38.5;41;43.5;46;48.5\nLENGTH (CM);99;101;103;105;107;108\nTHIGH (CM);28;29;30;31;32;33',context:'Sizing. Model wearing size 32 (inches).'}]};
+ const input=inputForReview(odessa,null,profile,[]);
+ assert.equal(input.product.measurementTables.length,1);assert.equal(input.product.measurementTables[0]?.unit,'cm');assert.equal(input.product.measurementTables[0]?.rows[4][1],'46');assert.deepEqual(input.decision.eligibleSizes,['26','28','30','32','34','36']);assert.equal(input.decision.canSelectSize,true);
+ const review=validateReview({...result,size:'34',summary:'I would try 34 using your usual waist label, with the chart’s width convention still uncertain.'},null,input);assert.equal(review.size,'34');assert.ok(review.limitations.some(s=>s.includes('chart values were read')));
+ const stored=recordScan([],odessa,null)[0];assert.equal(stored.measurementTables[0]?.rows[4][2],'107');assert.deepEqual(stored.measurements,[],'Unknown circumference convention must not become verified cm');
+ assert.throws(()=>validateReview({...result,size:null,summary:"The model note (6'1",checks:{width:'',length:'',sleeves:''}},null,input),/incomplete fit explanations/);
+});

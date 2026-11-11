@@ -1,14 +1,20 @@
 import {recommend,validateProduct,type Profile,type Product} from './fit';
 import {detect,type Page} from './detect';
 import {inputForReview,requestReview,type Assessment,type Feedback} from './assessment';
+import {createRequestBudget} from './request-budget';
 const flights=new Map<string,Promise<Assessment>>();
 const failed=new Set<string>();
-let budgetQueue=Promise.resolve();
+const budgetBlocked=new Set<string>();
+const reserveRequest=createRequestBudget(chrome.storage.local);
 const revisions=new Map<number,number>();
 chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
 chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
+ if(msg.type==='reserve-ai-request'){
+  if(sender.tab||sender.url!==chrome.runtime.getURL('index.html'))return;
+  reserveRequest().then(reply).catch(()=>reply({error:'Could not read the request budget.'}));return true;
+ }
  if(msg.type!=='page'||!sender.tab?.id)return;
  const tab=sender.tab.id;
  const revision=(revisions.get(tab)||0)+1;revisions.set(tab,revision);
@@ -40,10 +46,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
      job=(async():Promise<Assessment>=>{
       const cache=(await chrome.storage.local.get('fitCache')).fitCache as Record<string,Assessment>|undefined;
       if(cache?.[digest])return {...cache[digest],cached:true};
-      let allowed=false;
-      const reserve=budgetQueue.then(async()=>{const n=Number((await chrome.storage.local.get('aiCount')).aiCount||0);if(n<(settings?.limit??10)){await chrome.storage.local.set({aiCount:n+1});allowed=true;}});
-      budgetQueue=reserve.catch(()=>{});await reserve;
-      if(!allowed)return {status:'blocked',model,error:'Request limit reached. Increase it in Settings. No local recommendation is substituted.'};
+      const budget=await reserveRequest();
+      if(!budget.allowed)return {status:'blocked',model,code:'request_limit',usage:budget,error:`You have used ${budget.used} of ${budget.limit} AI requests. Add 100 more in the FORMA panel to continue.`};
       try{
        const review=await requestReview(input,mode,model,key);
        const entry:Assessment={status:'ready',model,cached:false,review};
@@ -51,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
        latest[digest]=entry;await chrome.storage.local.set({fitCache:Object.fromEntries(Object.entries(latest).slice(-40))});
        return entry;
       }catch(e){return {status:'error',model,error:e instanceof Error?e.message:'AI assessment failed.'};}
-     })().then(entry=>{if(entry.status==='error')failed.add(digest);return entry;});
+     })().then(entry=>{if(entry.status==='error')failed.add(digest);if(entry.code==='request_limit')budgetBlocked.add(digest);return entry;});
      flights.set(digest,job);
      // Retain failed attempts in memory too: DOM updates must not trigger paid retries.
     }
@@ -73,6 +77,11 @@ chrome.permissions.onRemoved.addListener(async()=>{
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
  if(area!=='local'||!['profile','description','settings','apiKey','feedback'].some(k=>changes[k]))return;
- if(changes.apiKey||changes.settings){flights.clear();failed.clear();}
+ if(changes.apiKey){flights.clear();failed.clear();budgetBlocked.clear();}
+ if(changes.settings){
+  // Budget edits release blocked work, but must not duplicate running requests.
+  for(const digest of budgetBlocked)flights.delete(digest);
+  budgetBlocked.clear();
+ }
  for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh'}).catch(()=>{});
 });

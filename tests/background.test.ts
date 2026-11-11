@@ -2,10 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 test('Recognised chart triggers AI by default, caches it, and reports provenance',async()=>{
  const local:Record<string,unknown>={profile:{mode:'body',name:'Test',category:'top',fit:'relaxed',measures:{chest:{value:102,uncertainty:12,estimated:true}}},description:'Loose hoodies, not cropped.',settings:{mode:'anthropic',model:'claude-haiku-5-5',assessmentVersion:1,limit:10},apiKey:'fake-test-key'};
- const session:Record<string,any>={};let listener:Function=()=>{};let calls=0;
+ const session:Record<string,any>={};let listener:Function=()=>{};let storageListener:Function=()=>{};let calls=0;
  const area=(data:Record<string,unknown>)=>({setAccessLevel:async()=>{},get:async(keys:string|string[])=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(k=>[k,data[k]])),set:async(p:Record<string,unknown>)=>Object.assign(data,p)});
  const previousFetch=globalThis.fetch;
- (globalThis as any).chrome={storage:{local:area(local),session:area(session),onChanged:{addListener:()=>{}}},sidePanel:{setPanelBehavior:()=>{}},runtime:{onMessage:{addListener:(fn:Function)=>listener=fn}},permissions:{contains:async()=>true,onRemoved:{addListener:()=>{}}}};
+ (globalThis as any).chrome={storage:{local:area(local),session:area(session),onChanged:{addListener:(fn:Function)=>storageListener=fn}},tabs:{query:async()=>[]},sidePanel:{setPanelBehavior:()=>{}},runtime:{getURL:(path:string)=>'chrome-extension://test/'+path,onMessage:{addListener:(fn:Function)=>listener=fn}},permissions:{contains:async()=>true,onRemoved:{addListener:()=>{}}}};
  globalThis.fetch=async(_url,init)=>{calls++;const input=JSON.parse(JSON.parse(String(init?.body)).messages[0].content);assert.equal(input.profile.description,local.description);assert.equal(input.profile.measures.chest,undefined);assert.equal(input.decision.canSelectSize,false);return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Need measured evidence for this hoodie',reasons:['Cut and length matter'],limitations:['Sleeves unknown']})}]}));};
  try{
   await import('../src/background');
@@ -24,5 +24,22 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   const retry=()=>new Promise<any>(resolve=>listener({...msg,retry:true},{tab:{id:1},url:'https://example.test/hoodie'},resolve));
   const fixed=await retry();assert.equal(calls,3);assert.equal(local.aiCount,3);assert.equal(fixed.result.message,'Complete assessment');
   await retry();assert.equal(calls,3);
+  local.settings={...(local.settings as object),limit:100,limitVersion:1};local.aiCount=100;msg.name='Budget-limited hoodie';
+  await send();assert.equal(session['page:1'].assessment.code,'request_limit');assert.equal(calls,3);
+  const oldSettings=local.settings;local.settings={...(oldSettings as object),limit:200};
+  await storageListener({settings:{oldValue:oldSettings,newValue:local.settings}},'local');
+  await send();assert.equal(calls,4);assert.equal(local.aiCount,101);assert.equal(session['page:1'].assessment.status,'ready');
+  const manual=await new Promise<any>(resolve=>listener({type:'reserve-ai-request'},{url:'chrome-extension://test/index.html'},resolve));
+  assert.equal(manual.allowed,true);assert.equal(local.aiCount,102);
+  let pageReserved=false;listener({type:'reserve-ai-request'},{tab:{id:1},url:'https://example.test/'},()=>pageReserved=true);
+  assert.equal(pageReserved,false);assert.equal(local.aiCount,102);
+  // Raising the limit must not drop an in-flight assessment and pay twice.
+  let started!:()=>void;const startedPromise=new Promise<void>(resolve=>started=resolve);
+  let complete!:()=>void;const pending=new Promise<Response>(resolve=>complete=()=>resolve(new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({size:null,summary:'Finished once',reasons:[],limitations:[]})}]}))));
+  globalThis.fetch=async()=>{calls++;started();return pending;};msg.name='Pending hoodie';
+  const firstPending=send();await startedPromise;
+  local.settings={...(local.settings as object),limit:300};await storageListener({settings:{newValue:local.settings}},'local');
+  const secondPending=send();complete();await Promise.all([firstPending,secondPending]);
+  assert.equal(calls,5);assert.equal(local.aiCount,103);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

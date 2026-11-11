@@ -32,7 +32,7 @@ export function sizeEvidence(product:Product|null,profile:Profile,description:st
    const dimensions:Key[]=[];
    if(/too tight|zu eng/i.test(f.value))dimensions.push(primary);
    if(/sleeve.*short|ärmel.*kurz/i.test(f.value))dimensions.push('sleeve');
-   else if(/too short|zu kurz/i.test(f.value))dimensions.push(category==='trousers'?'inseam':'length');
+   if(/(?:^|;\s*)too short|(?:^|;\s*)zu kurz/i.test(f.value))dimensions.push(category==='trousers'?'inseam':'length');
    return dimensions.some(k=>s.measures[k]!==undefined&&tried.measures[k]!==undefined&&normalise(s.measures[k]!,product.unit,product.flat,k)[1]<=normalise(tried.measures[k]!,product.unit,product.flat,k)[0]);
   }))return false;
   return fitted.includes(s.label)||s.measures[primary]!==undefined;

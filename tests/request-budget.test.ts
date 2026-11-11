@@ -32,3 +32,9 @@ test('An explicitly uncapped budget keeps counting without blocking, and can be 
  await store.set({settings:{limit:100,limitVersion:1,unlimited:false}});
  assert.equal((await reserve()).allowed,false);assert.equal(store.data.aiCount,102);
 });
+
+test('Persistent off switch blocks reservations even with an unlimited budget',async()=>{
+ const store=storage({formaEnabled:false,settings:{unlimited:true},aiCount:7});const reserve=createRequestBudget(store);
+ assert.equal((await reserve()).allowed,false);assert.equal(store.data.aiCount,7);
+ await store.set({formaEnabled:true});assert.equal((await reserve()).allowed,true);assert.equal(store.data.aiCount,8);
+});

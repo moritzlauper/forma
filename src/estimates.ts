@@ -12,10 +12,11 @@ export function withEstimates(profile:Profile):Profile {
   hip:{value:Math.round(chest*1.02),uncertainty:14,estimated:true},
   shoulder:{value:Math.round(h*.245),uncertainty:5,estimated:true},
   sleeve:{value:Math.round(h*.34),uncertainty:6,estimated:true},
-  length:{value:Math.round(h*.37),uncertainty:7,estimated:true},
   inseam:{value:Math.round(h*.46),uncertainty:7,estimated:true}
  };
  const measures={...profile.measures};
+ // Stature cannot establish a preferred garment length across tees, hoodies and jackets.
+ if(measures.length?.estimated&&!measures.length.locked)delete measures.length;
  for(const [key,value] of Object.entries(candidates) as [Key,Measure][]){const current=measures[key];if(!current||(current.estimated&&!current.locked))measures[key]=value;}
  return {...profile,measures};
 }

@@ -80,3 +80,10 @@ test('Chest room uses actual arithmetic and keeps shoulder fit separate',()=>{
  assert.deepEqual(estimated.decision.chestRoom[0].easeRange,[-8,16]);assert.equal(estimated.decision.chestRoom[0].bodySource,'estimate');
  assert.deepEqual(inputForReview(page,{...tee,measurementType:'body',flat:false},user,[]).decision.chestRoom,[]);
 });
+
+test('Returned hoodie feedback excludes tried and shorter sizes across collection URLs',()=>{
+ const hoodie={...product,sizes:[{label:'M',available:true,measures:{chest:60.5,length:66}},{label:'L',available:true,measures:{chest:63,length:68}},{label:'XL',available:true,measures:{chest:65.5,length:70}}]};
+ const input=inputForReview({...page,url:'https://example.test/collections/hoodies/products/hoodie'},hoodie,profile,[{name:page.name,url:page.url,size:'L',value:'Too short; Sleeves too short; Hem too tight',note:'Returning it.'}], 'Prefer wider, not too long.',[{name:page.name,url:page.url,size:'L',reason:'Old bookmark',category:'top',product:hoodie,savedAt:1}]);
+ assert.deepEqual(input.decision.eligibleSizes,['XL']);assert.equal(input.decision.fittedSizes.length,0);
+ assert.throws(()=>validateReview({size:'L',summary:'L fits',reasons:[],limitations:[]},hoodie,input),/contradicted/);
+});

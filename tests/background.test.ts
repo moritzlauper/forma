@@ -67,5 +67,18 @@ test('Recognised chart triggers AI by default, caches it, and reports provenance
   await new Promise<any>(resolve=>listener({type:'open-fit-editor',kind:'bad'},{tab:{id:1},url:'https://example.test/archive',frameId:0},resolve));assert.equal(session['fit-editor:1'].kind,'bad');assert.equal(calls,beforeBookmark);
   await new Promise<any>(resolve=>listener({type:'page-error',name:'Unreadable product'},{tab:{id:1},url:'https://example.test/error'},resolve));
   assert.equal(session['page:1'].scan.status,'error');assert.equal(calls,9);
+
+  // A persisted pause blocks manual/automatic work and aborts an in-flight request.
+  local.formaEnabled=false;await storageListener({formaEnabled:{newValue:false}},'local');
+  const pausedCalls=calls,pausedCount=local.aiCount;
+  assert.equal((await send()).paused,true);
+  const blocked=await new Promise<any>(resolve=>listener({type:'reserve-ai-request'},{url:'chrome-extension://test/index.html'},resolve));
+  assert.equal(blocked.allowed,false);assert.equal(calls,pausedCalls);assert.equal(local.aiCount,pausedCount);
+  local.formaEnabled=true;await storageListener({formaEnabled:{newValue:true}},'local');
+  let abortStarted!:()=>void;const abortStart=new Promise<void>(resolve=>abortStarted=resolve);let aborted=false;
+  globalThis.fetch=async(_url,init)=>{calls++;abortStarted();return new Promise<Response>((_resolve,reject)=>{init!.signal!.addEventListener('abort',()=>{aborted=true;reject(new Error('aborted'));},{once:true});});};
+  msg.name='Abort hoodie';const aborting=send();await abortStart;
+  local.formaEnabled=false;await storageListener({formaEnabled:{newValue:false}},'local');
+  assert.equal((await aborting).paused,true);assert.equal(aborted,true);assert.equal(calls,pausedCalls+1);
  }finally{globalThis.fetch=previousFetch;delete (globalThis as any).chrome;}
 });

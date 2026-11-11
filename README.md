@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.7.
+A Chrome extension for explainable clothing-fit assessments. English interface; free-form English and German profile notes are saved locally and included in AI assessments. Version 1.3.8.
 
 **Free Chrome extension.** Compare clothing sizes, understand the reasons behind an estimate, and save what fits. Optional Anthropic API usage costs extra; local Ollama and a No AI measurement-comparison mode are also available.
 
@@ -17,6 +17,8 @@ Run `npm ci`, `npm run check`, `npm test`, and `npm run build`. Open `chrome://e
 New installations start with an empty profile. Existing profiles and saved API keys stay in the browser when updating the same installation. Missing body dimensions receive broad, unvalidated starting estimates after height and weight are provided. Manual and locked values take precedence. Automatic numeric body estimates are sent separately with uncertainty ranges as weak AI evidence; they are not treated as measured facts and cannot independently produce a local size recommendation.
 
 ## Everyday use
+
+The **On / Off switch** beside the FORMA logo pauses automatic analysis, manual AI requests and retries. This choice persists across navigation and browser restarts. Existing profiles and cached assessments remain available. Pending requests are cancelled when possible; a request already received by the provider may still incur charges.
 
 Describe your fit preferences in **Your profile**. The first-start card already selects Claude Haiku 5.5: enter your API key and choose **Enable AI & automatic detection**. Chrome asks for website access once. The all-shops button also works while Chrome settings or an extension page is active, requests access directly from the click, and shows activation/denial beside the button. The key stays on this device; existing keys and explicit provider preferences are preserved. You can also enable automatic detection from Settings.
 
@@ -38,11 +40,11 @@ The panel shows the model, completion/cache status, image inclusion, reasons and
 
 Fit assessments request schema-constrained JSON. Token-limit stops, refusals and malformed responses are checked before accepting a result; partial answers are never repaired into recommendations. Refresh can retry failures or replace an earlier completed answer.
 
-FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated dimensions are supplied separately with their broad uncertainty ranges. Measured values and actual fit feedback take priority. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. Chat conversations outside the extension are not automatically imported as profile feedback.
+FORMA can make a tentative size estimate from height, weight, fit preferences and the chart without requiring personal measurements. These results are labelled **Estimated size**. Every selected size must include separate width, length and sleeve checks; unknown sleeve measurements remain a limitation rather than a blanket veto. Known/reference measurements improve comparisons. Automatically generated dimensions are supplied separately with their broad uncertainty ranges. Measured values and actual fit feedback take priority. Recorded negative fit feedback removes contradicted sizes, without proving that a larger size will fit. There is no universal garment-length target derived from height: a T-shirt length preference does not establish a suitable hoodie length. Actual reports of short sleeves, insufficient coverage and a tight hem take priority over generic box-fit descriptions. Explicit negative feedback takes priority over an older good-fit bookmark for the same product and size, including alternate collection URLs. Chat conversations outside the extension are not automatically imported as profile feedback.
 
-## Relative fit scores
+## Fit scores out of 10
 
-One AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes the overall weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
+The popup and panel show an overall fit estimate **out of 10**, including single-size listings. Size comparisons also use the ten-point display scale. Unknown or excluded options are identified explicitly rather than given an invented number. Internally, one AI request evaluates all chart sizes together, with relative 0–100 ratings for width, length, style and sleeves. These are heuristic judgements, not calibrated probabilities. FORMA computes the overall weighted average locally: width ×3, length ×3 (×4 for hoodies, ×5 for stated length concerns), style ×2, sleeves ×2 (×4 for a stated sleeve concern; omitted for categories without applicable sleeves). Missing garment dimensions force the corresponding score to unknown, and are omitted from the average. Assessed-factor counts show incomplete coverage. A high score with unverified sleeves is still uncertain.
 
 The panel shows every size's total and component scores plus a short explanation. The compact shop card shows up to six totals near the top. Sizes excluded by recorded fit feedback cannot win. If the AI's selected size disagrees with the calculated ranking, FORMA uses the highest eligible score and replaces the inconsistent explanation. Existing assessment caching applies to the whole comparison, not one paid call per size.
 
@@ -164,3 +166,12 @@ The main verdict is now **Overall fit**: the garment's match to your preferences
 **Build & proportions** is editable alongside usual sizes. Self-described broad shoulders/chest informs shoulder comfort, layering and coverage without inventing new measurements. Measurements now sit immediately after profile basics. Additive `forma-profile-update` imports can update this description without replacing measurements, fit notes or saved clothing. Existing completed assessments survive a same-page rescan failure, with a separate connection notice.
 
 Poor width, length or sleeve ratings cap the aggregate rating; they cannot be compensated for by another factor. A poor best candidate is not recommended. Chest-ease arithmetic includes the supplied measurement uncertainty and does not imply shoulder fit. Existing preference/concern fields are consolidated into editable fit notes, preserving their text.
+
+
+### 1.3.8 updates
+
+A persistent header switch pauses FORMA, including automatic assessments, manual AI requests and retries. Pending requests are aborted where possible; provider work already accepted may still incur charges. Saved profiles and cached results remain available while paused.
+
+Overall fit and size comparisons display estimates out of 10. Missing scores are not fabricated. Automatic height-based garment-length targets are removed: hoodie coverage and hem comfort must be assessed separately from T-shirt preferences. Explicit tried-fit feedback overrides older good-fit bookmarks for the same product and size, including collection URL variants. Multiple reported problems can constrain both body and sleeve length. Additive profile imports can include tried-fit feedback while retaining unrelated saved evidence.
+
+Validation: 156 automated tests, TypeScript/build checks, isolated Chromium regression tests with simulated AI, and a narrow-panel visual check. Live provider predictions and the user's Chrome profile were not accessed.

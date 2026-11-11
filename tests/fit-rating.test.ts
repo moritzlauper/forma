@@ -11,3 +11,11 @@ test('Overall item fit is independent of being the only size or winning a compar
  assert.equal(overallFit({size:'L'}).label,'Not enough data');
  assert.equal(overallFit({size:null,ranked:[{size:'L',overall:40,eligible:true,reason:'Too short.'}]}).label,'Not recommended');
 });
+
+test('Ten-point display preserves numeric estimates and never invents scores from labels',async()=>{
+ const {fitScore,overallScore}=await import('../src/fit-rating');
+ assert.equal(fitScore(79),'7.9/10');assert.equal(fitScore(0),'0.0/10');assert.equal(fitScore(null),'Not enough data');assert.equal(fitScore(90,false),'Not recommended');
+ assert.equal(overallScore({size:'L',overallFit:{label:'Good fit',reason:'Test'}}),'Not enough data');
+ assert.equal(overallScore({size:'L',overallFit:{label:'Good fit',reason:'Test',score:8.1}}),'8.1/10');
+ assert.equal(overallScore({size:null,ranked:[{size:'L',eligible:true,overall:30,reason:'Too short'}]}),'3.0/10');
+});

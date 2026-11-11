@@ -167,7 +167,7 @@ try{
  await panel.getByRole('heading',{name:'Estimated size: 34',exact:true}).waitFor({timeout:15000});
  const odessaInput=await worker.evaluate(()=>globalThis.testInput);
  await panel.getByText('Compare sizes',{exact:true}).waitFor();
- await panel.locator('.fit-score').filter({hasText:/Fair fit|Good fit|Mostly good fit|Very good fit|Excellent fit/}).waitFor();
+ await panel.locator('.fit-score').filter({hasText:/\d\.\d\/10/}).waitFor();
  assert.doesNotMatch(await panel.locator('.fit-score').innerText(),/\/100/);
  const explanation=panel.locator('.verdict details');assert.equal(await explanation.getAttribute('open'),null);
  await explanation.locator('summary').click();assert.notEqual(await explanation.getAttribute('open'),null);await explanation.locator('summary').click();
@@ -246,6 +246,21 @@ try{
  assert.equal(await panel.getByLabel('Build & proportions').inputValue(),'Broad shoulders; comfortable chest room.');
  assert.equal(await panel.getByLabel('Fit preferences & concerns').count(),0);
  if(process.env.FORMA_SCREENSHOT){await panel.setViewportSize({width:430,height:900});await panel.screenshot({path:process.env.FORMA_SCREENSHOT,fullPage:true});}
+
+ // The header pause survives panel reload, navigation and reader injection.
+ await panel.getByRole('switch',{name:'FORMA enabled'}).click();
+ await panel.getByRole('switch',{name:'FORMA enabled'}).filter({hasText:'Off'}).waitFor();
+ const pausedRequests=await worker.evaluate(()=>globalThis.testRequests);
+ await panel.reload();await panel.getByRole('switch',{name:'FORMA enabled'}).filter({hasText:'Off'}).waitFor();
+ await shop.reload();await shop.waitForTimeout(900);
+ assert.equal(await worker.evaluate(()=>globalThis.testRequests),pausedRequests,'No request while disabled after reload');
+ assert.equal(await shop.locator('#forma-fit-card').count(),0);
+ await panel.getByRole('button',{name:/01.*Your fit/}).click();
+ assert.equal(await panel.getByRole('button',{name:'Refresh',exact:true}).isDisabled(),true);
+ if(process.env.FORMA_PAUSE_SCREENSHOT)await panel.screenshot({path:process.env.FORMA_PAUSE_SCREENSHOT,fullPage:true});
+ await panel.getByRole('switch',{name:'FORMA enabled'}).click();
+ await panel.getByRole('button',{name:'Refresh',exact:true}).waitFor();
+ for(let i=0;i<100&&await panel.getByRole('button',{name:'Refresh',exact:true}).isDisabled();i++)await shop.waitForTimeout(50);
  // Invalidate the real isolated extension while keeping its shop tab open.
  const shopErrors=[];shop.on('pageerror',error=>shopErrors.push(error.message));
  const debuggerSession=await context.newCDPSession(shop);let readerContext;

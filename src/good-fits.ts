@@ -2,7 +2,7 @@ import {validateProduct,type Category,type Product,type Profile,type Key} from '
 import {measurementTable} from './chart-shape';
 import type {Page,Chart} from './detect';
 export type GoodFit={evidence?:Page['evidence'];evidenceObservedAt?:number;charts?:Chart[];images?:string[];url:string;name:string;category:Category|null;product:Product|null;description?:string;size:string;reason:string;savedAt:number};
-export function productIdentity(url:string):string{try{const u=new URL(url);return u.origin+u.pathname;}catch{return url;}}
+export function productIdentity(url:string):string{try{const u=new URL(url);return u.origin+u.pathname.replace(/^\/collections\/[^/]+\/products\//,'/products/');}catch{return url;}}
 export function saveGoodFit(entries:GoodFit[],entry:GoodFit):GoodFit[]{return [{...entry,reason:entry.reason.slice(0,1200)},...entries.filter(e=>productIdentity(e.url)!==productIdentity(entry.url))].slice(0,50);}
 export function goodFitExamples(entries:GoodFit[],product:Product|null,profile:Profile){
  const category=product?.category||profile.category;

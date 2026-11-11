@@ -9,3 +9,9 @@ test('Reference garments and unsupported inputs are not estimated',()=>{assert.d
 test('Changing height updates only unlocked automatic estimates',()=>{const a=withEstimates(p);const b=withEstimates({...a,context:{...p.context!,height:200}});assert.notEqual(a.measures.sleeve?.value,b.measures.sleeve?.value);});
 test('Broad estimated dimensions cannot select a local size',()=>{const product=parseTable('Size;Chest;Sleeve;Length\nM;60;63;68',{name:'Hoodie',category:'top',measurementType:'garment',unit:'cm',flat:true,source:'test'});const r=recommend(withEstimates(p),product);assert.equal(r.quality,'rough estimate');assert.equal(r.ranked.length,0);assert.match(r.message,/too uncertain/);});
 test('Waist labels are not passed off as measured circumferences',()=>{const a=withEstimates(p),b=withEstimates({...p,context:{...p.context!,waistLabel:'W40'}});assert.deepEqual(a.measures.waist,b.measures.waist);});
+
+test('Height does not create or retain an automatic universal garment length',()=>{
+ assert.equal(withEstimates(p).measures.length,undefined);
+ assert.equal(withEstimates({...p,measures:{length:{value:68,uncertainty:7,estimated:true}}}).measures.length,undefined);
+ assert.equal(withEstimates({...p,measures:{length:{value:74,uncertainty:1,estimated:true,locked:true}}}).measures.length?.value,74);
+});

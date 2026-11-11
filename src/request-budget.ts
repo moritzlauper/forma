@@ -16,9 +16,10 @@ export function createRequestBudget(storage:Storage){
  let queue=Promise.resolve();
  return ():Promise<RequestBudget>=>{
   const result=queue.then(async()=>{
-   const data=await storage.get(['settings','aiCount']);
+   const data=await storage.get(['settings','aiCount','formaEnabled']);
    const limit=requestLimit(data.settings);
    const used=Number.isSafeInteger(data.aiCount)&&data.aiCount>=0?data.aiCount:0;
+   if(data.formaEnabled===false)return {allowed:false,used,limit};
    if(!hasNoRequestCap(data.settings)&&used>=limit)return {allowed:false,used,limit};
    await storage.set({aiCount:used+1});
    return {allowed:true,used:used+1,limit};

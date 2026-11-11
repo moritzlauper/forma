@@ -6,6 +6,8 @@ import {inputForReview,requestReview,type Assessment,type Feedback} from './asse
 import {createRequestBudget} from './request-budget';
 import {saveGoodFit,productIdentity,type GoodFit} from './good-fits';
 import {recordScan,enrichGoodFits,type ScanRecord} from './scan-library';
+let enabled=true;let activation=0;const controllers=new Set<AbortController>();
+const isEnabled=async()=>enabled&&(await chrome.storage.local.get('formaEnabled')).formaEnabled!==false;
 const flights=new Map<string,Promise<Assessment>>();
 const settled=new Set<string>();
 const failed=new Set<string>();
@@ -21,6 +23,7 @@ chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
 chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
+ if(msg.type==='forma-state'){isEnabled().then(value=>reply({enabled:value}));return true;}
  if(msg.type==='open-fit-editor'){
   if(!sender.tab?.id||sender.frameId&&sender.frameId!==0||!['good','bad'].includes(msg.kind))return;
   const tabId=sender.tab.id;
@@ -55,12 +58,14 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
  }
  if(msg.type==='reserve-ai-request'){
   if(sender.tab||sender.url!==chrome.runtime.getURL('index.html'))return;
-  reserveRequest().then(reply).catch(()=>reply({error:'Could not read the request budget.'}));return true;
+  isEnabled().then(async on=>on?reserveRequest():{allowed:false,error:'FORMA is off. Turn it on in the header to analyse.'}).then(reply).catch(()=>reply({error:'Could not read the request budget.'}));return true;
  }
  if(!['page','page-progress','page-error'].includes(msg.type)||!sender.tab?.id)return;
  const tab=sender.tab.id;
  const revision=(revisions.get(tab)||0)+1;revisions.set(tab,revision);
+ const generation=activation;
  (async()=>{
+  if(!await isEnabled()){reply({paused:true});return;}
   const page:Page={url:sender.url||'',name:String(msg.name||'').slice(0,200),text:String(msg.text||'').slice(0,16000),charts:Array.isArray(msg.charts)?msg.charts.slice(0,12).map((t:{text?:unknown;context?:unknown})=>({text:String(t.text||'').slice(0,8000),context:String(t.context||'').slice(0,10000)})):[]};
   if(msg.evidence&&typeof msg.evidence==='object')page.evidence={sizes:Array.isArray(msg.evidence.sizes)?msg.evidence.sizes.filter((s:unknown)=>typeof s==='string'&&s.length<=30).slice(0,60):[],models:Array.isArray(msg.evidence.models)?msg.evidence.models.filter((m:any)=>Number.isFinite(m.heightCm)&&typeof m.size==='string'&&typeof m.quote==='string').slice(0,3).map((m:any)=>({heightCm:m.heightCm,size:m.size.slice(0,30),quote:m.quote.slice(0,250)})):[],fit:Array.isArray(msg.evidence.fit)?msg.evidence.fit.filter((s:unknown)=>typeof s==='string'&&s.length<=40).slice(0,12):[],sourceHTML:String(msg.evidence.sourceHTML||'').slice(0,12000)};
   page.detection=msg.detection;page.manual=msg.manual===true;
@@ -95,7 +100,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
    else{
     const input=inputForReview(page,product,withEstimates(migrateProfile(data.profile as Profile)),(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans));
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v19|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v20|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
     if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
     let job=flights.get(digest);const reused=!!job&&settled.has(digest);
@@ -103,16 +108,20 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
      job=(async():Promise<Assessment>=>{
       const cache=(await chrome.storage.local.get('fitCache')).fitCache as Record<string,Assessment>|undefined;
       if(cache?.[digest]&&msg.fresh!==true)return {...cache[digest],cached:true};
+      if(generation!==activation||!await isEnabled())return {status:'blocked',model,error:'FORMA is off.'};
       const budget=await reserveRequest();
       if(!budget.allowed)return {status:'blocked',model,code:'request_limit',usage:budget,error:`You have used ${budget.used} of ${budget.limit} AI requests. Add 100 more in the FORMA panel to continue.`};
+      const controller=new AbortController();controllers.add(controller);
       try{
-       const review=await requestReview(input,mode,model,key,async()=>(await reserveRequest()).allowed);
+       if(generation!==activation||!await isEnabled())throw Error('FORMA is off.');
+       const review=await requestReview(input,mode,model,key,async()=>generation===activation&&await isEnabled()&&(await reserveRequest()).allowed,controller.signal);
+       if(controller.signal.aborted||generation!==activation)throw Error('FORMA is off.');
        const entry:Assessment={status:'ready',model,cached:false,review};
        const latest=(await chrome.storage.local.get('fitCache')).fitCache as Record<string,Assessment>||{};
        latest[digest]=entry;await chrome.storage.local.set({fitCache:Object.fromEntries(Object.entries(latest).slice(-40))});
        return entry;
-      }catch(e){return {status:'error',model,error:e instanceof Error?e.message:'AI assessment failed.'};}
-     })().then(entry=>{settled.add(digest);if(entry.status==='error')failed.add(digest);if(entry.code==='request_limit')budgetBlocked.add(digest);return entry;});
+      }catch(e){return {status:'error',model,error:e instanceof Error?e.message:'AI assessment failed.'};}finally{controllers.delete(controller);}
+     })().then(entry=>{if(generation!==activation)return entry;settled.add(digest);if(entry.status==='error')failed.add(digest);if(entry.code==='request_limit')budgetBlocked.add(digest);return entry;});
      flights.set(digest,job);
      // Retain failed attempts in memory too: DOM updates must not trigger paid retries.
     }
@@ -121,6 +130,7 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
    }
   }
   const result=mode==='none'&&product&&data.profile?recommend(data.profile as Profile,product):null;
+  if(generation!==activation||!await isEnabled()){reply({paused:true});return;}
   if(revisions.get(tab)!==revision){reply({url:page.url,stale:true});return;}
   await chrome.storage.session.set({['page:'+tab]:{...page,product,result,reason:found.reason,assessment}});
   const message=assessment?assessment.status==='ready'?assessment.review!.summary:assessment.error||'AI is reviewing your fit…':result?.message||found.reason;
@@ -136,6 +146,13 @@ chrome.permissions.onRemoved.addListener(async()=>{
  for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
 });
 chrome.storage.onChanged.addListener(async(changes,area)=>{
+ if(area==='local'&&changes.formaEnabled){
+  enabled=changes.formaEnabled.newValue!==false;activation++;
+  if(!enabled){for(const controller of controllers)controller.abort();flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
+  for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'forma-enabled',enabled}).catch(()=>{});
+  return;
+ }
+ if(!await isEnabled())return;
  // Saved profile notes are applied on the next scan or by explicit request.
  if(area!=='local'||!['profile','settings','apiKey','feedback'].some(k=>{const change=changes[k];if(!change)return false;const canonical=(v:any)=>k==='profile'&&v?withEstimates(migrateProfile(v)):v;return JSON.stringify(canonical(change.oldValue))!==JSON.stringify(canonical(change.newValue));}))return;
  if(changes.apiKey){flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}

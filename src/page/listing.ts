@@ -362,7 +362,7 @@ function readImages(doc: Document, root: Element, ld: LdProduct | undefined): st
     entries.sort((a, b) => b.w - a.w);
     return entries[0]?.url || img.currentSrc || img.getAttribute('data-src') || img.getAttribute('src');
   };
-  const scored = Array.from(root.querySelectorAll<HTMLImageElement>('img')).filter(img => !ignored(img) && !foreignLink(img) && !/logo|icon|avatar|payment|flag|badge|sprite|rating|star/i.test((img.alt || '') + ' ' + (img.getAttribute('class') || '') + ' ' + (img.getAttribute('src') || ''))).map(img => {
+  const scored = Array.from(root.querySelectorAll<HTMLImageElement>('img')).filter(img => !ignored(img) && !foreignLink(img) && !inCard(img) && !/logo|icon|avatar|payment|flag|badge|sprite|rating|star/i.test((img.alt || '') + ' ' + (img.getAttribute('class') || '') + ' ' + (img.getAttribute('src') || ''))).map(img => {
     const box = typeof img.getBoundingClientRect === 'function' ? img.getBoundingClientRect() : { width: 0, height: 0 };
     const width = box.width || Number(img.getAttribute('width')) || img.naturalWidth || 0;
     const height = box.height || Number(img.getAttribute('height')) || img.naturalHeight || 0;

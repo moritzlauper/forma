@@ -26,8 +26,13 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
 const s = (v: unknown, max: number) => typeof v === 'string' ? v.slice(0, max) : '';
 /** The content script runs on arbitrary pages; bound everything it sends. */
-function sanitize(raw: any, url: string): Listing | null {
+function sanitize(raw: any, senderUrl: string): Listing | null {
   if (!raw || typeof raw !== 'object') return null;
+  // Chrome keeps the sender URL of the original document after client-side
+  // navigation (history.pushState). The reader's own URL is current; accept it
+  // when it belongs to the same site.
+  let url = senderUrl;
+  try { if (typeof raw.url === 'string' && new URL(raw.url).origin === new URL(senderUrl).origin) url = raw.url; } catch { /* keep sender URL */ }
   const strings = (v: unknown, n: number, max: number) => Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, n).map(x => x.slice(0, max)) : [];
   return {
     url, site: s(raw.site, 100), marketplace: raw.marketplace === true, title: s(raw.title, 200), brand: s(raw.brand, 80),

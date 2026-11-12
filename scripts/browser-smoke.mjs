@@ -156,16 +156,28 @@ try {
   assert.ok(!lazyState.listing.facts.some(f => /twill/.test(f)), 'recommendation cards are not facts');
   console.log('✓ lazily loaded recommendations do not restart the assessment');
 
+  // 3c. Single-page navigation to another product (COS "Discover similar pieces").
+  await lazy.evaluate(() => {
+    history.pushState({}, '', '/en-ch/men/menswear/jackets/product/padded-funnel-neck-down-jacket-black-1293490003');
+    document.querySelector('h1').textContent = 'PADDED FUNNEL-NECK DOWN JACKET';
+    document.title = 'PADDED FUNNEL-NECK DOWN JACKET';
+  });
+  await waitFor(async () => (await state(lazy))?.status === 'ready' && (await state(lazy)).title === 'PADDED FUNNEL-NECK DOWN JACKET', 20000, 'assessment after client-side navigation');
+  assert.equal((await state(lazy)).listing.kind, 'jacket');
+  await waitFor(() => lazy.evaluate(() => !document.getElementById('forma-loading')), 5000, 'loading chip ends after client-side navigation');
+  console.log('✓ client-side navigation to another product is assessed');
+  const afterSpa = await requests();
+
   // 4. Saving feedback recomputes locally, without a request.
   await worker.evaluate(async () => { await chrome.storage.local.set({ feedback: [{ name: 'WRSTBHVR Hoodie XL', url: 'https://www.ricardo.test/de/a/wrstbhvr-hoodie-xl-1334615952/', size: 'XL', value: 'Fits', note: '' }] }); });
   await waitFor(async () => (await state(listing))?.decision?.level === 'confirmed', 5000, 'local recompute');
-  assert.equal(await requests(), 3);
+  assert.equal(await requests(), afterSpa);
   console.log('✓ feedback updates the verdict without an AI request');
 
   // 5. Pausing stops everything.
   await worker.evaluate(() => chrome.storage.local.set({ formaEnabled: false }));
   await page.reload(); await page.waitForTimeout(3000);
-  assert.equal(await requests(), 3);
+  assert.equal(await requests(), afterSpa);
   assert.equal(await page.evaluate(() => !!document.getElementById('forma-loading')), false);
   console.log('✓ the off switch stops reading and requests');
 

@@ -3,7 +3,7 @@ import { watchRuntimeInvalidation } from './runtime-lifecycle';
 import { createRuntimeMessenger } from './runtime-messaging';
 import { READER_PROTOCOL } from './page-connection';
 import { productIdentity } from './core/identity';
-import { hasMeasureTable, listingSignature, readListing } from './page/listing';
+import { hasMeasureTable, listingSignature, materialSignature, readListing } from './page/listing';
 import { openSizeGuide } from './page/guide';
 import { createCard } from './page/card';
 import type { Listing, PageState } from './core/types';
@@ -52,9 +52,10 @@ import type { Listing, PageState } from './core/types';
 
   function stopWaiting() { waiting = false; clearTimeout(answerTimer); loading.stop(); }
   function startWaiting() {
+    const already = waiting;
     waiting = true; clearTimeout(answerTimer);
     if (dismissed()) return;
-    loading.start('FORMA · Reading the product…');
+    if (!already) loading.start('FORMA · Reading the product…');
     answerTimer = setTimeout(() => { if (waiting && !disposed) loading.fail('FORMA got no answer. Open FORMA and press Refresh.'); }, ANSWER_MS);
   }
 
@@ -87,7 +88,9 @@ import type { Listing, PageState } from './core/types';
         if (await openSizeGuide(document)) listing = readListing(document);
         if (disposed || own !== generation) return;
       }
-      const signature = listingSignature(listing) + (manual ? '|manual' : '');
+      // The first send uses the full, settled listing. After that, only material
+      // changes (sizes, availability, charts) justify a new assessment.
+      const signature = materialSignature(listing) + (manual ? '|manual' : '');
       if (signature === sent && !fresh) return;
       sent = signature;
       if (relevant(listing)) startWaiting(); else { stopWaiting(); card.hide(); }

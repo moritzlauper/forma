@@ -44,6 +44,20 @@ function foreignLink(el: Element): boolean {
   } catch { return false; }
 }
 
+const PRICE = /(?:CHF|EUR|USD|GBP|SEK|[€$£])\s?\d|\d[\d'.,]*\s?(?:CHF|EUR|€|\.-)/;
+
+/** A product card: a small block with a link to another page and a picture or a price. */
+function inCard(el: Element): boolean {
+  let p = el.parentElement;
+  for (let i = 0; i < 6 && p && p.tagName !== 'MAIN' && p.tagName !== 'BODY'; i++, p = p.parentElement) {
+    const text = p.textContent || '';
+    if (text.length > 400) return false;
+    if (!Array.from(p.querySelectorAll('a[href]')).some(a => foreignLink(a))) continue;
+    if (p.querySelector('img,picture') || PRICE.test(text)) return true;
+  }
+  return false;
+}
+
 /** Text of a block without the text of links to other pages inside it. */
 function ownText(el: Element): string {
   let text = textOf(el);
@@ -242,7 +256,7 @@ function readDescription(root: Element, ld: LdProduct | undefined): string {
 function readFacts(root: Element, description: string): string[] {
   const out: string[] = []; let total = 0;
   for (const el of leafBlocks(root)) {
-    if (foreignLink(el)) continue;
+    if (foreignLink(el) || inCard(el)) continue;
     const text = stableText(ownText(el));
     if (text.length < 4 || text.length > 300) continue;
     if (!MEASURE_NUMBER.test(text) && !FACT_WORDS.test(text)) continue;
@@ -425,6 +439,11 @@ export function readListing(doc: Document): Listing {
 /** Signature of the stable fields. Countdowns, prices and seller ratings are not part of it. */
 export function listingSignature(l: Listing): string {
   return JSON.stringify([l.title, l.kind, l.product, l.attributes, l.sizes.map(s => [s.label, s.available]), l.description.slice(0, 1500), l.facts, l.tables, l.images]);
+}
+
+/** What changes the assessment materially. Copy text that loads later does not. */
+export function materialSignature(l: Listing): string {
+  return JSON.stringify([l.title, l.kind, l.product, l.sizes.map(s => [s.label, s.available]), l.tables]);
 }
 
 export function hasMeasureTable(l: Listing): boolean {

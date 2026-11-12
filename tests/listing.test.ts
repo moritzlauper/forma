@@ -129,3 +129,16 @@ test('Without a size picker the chart labels are the sizes', () => {
     <table><tr><th></th><th>S</th><th>M</th><th>L</th></tr><tr><td>Chest (cm)</td><td>52</td><td>55</td><td>58</td></tr></table></main>`, 'https://shop.test/products/box-tee'));
   assert.deepEqual(l.sizes.map(s => s.label), ['S', 'M', 'L']);
 });
+
+test('Recommendation cards whose titles sit outside the link are ignored (COS layout)', () => {
+  const card = (name: string) => `<div class="tile"><a href="/en-ch/men/product/${name.replace(/ /g, '-')}-123456789"><img src="https://img.test/${name.length}.jpg" width="300" height="400"></a><p>${name}</p><span>CHF 89</span></div>`;
+  const l = readListing(page(`<main><h1>RELAXED STRIPED COTTON SHIRT</h1><span>CHF 89.00</span>
+    <div class="size-selector"><button>XS</button><button>S</button><button>M</button><button>L</button><button>XL</button></div><button>Add to bag</button>
+    <div class="details"><p>Relaxed fit</p><p>Back length of size M is 77cm / Model wears a size M</p></div>
+    <div class="you-may-like">${card('Relaxed twill shirt')}${card('Buckled denim relaxed-fit barrel-leg trousers')}</div></main>`,
+    'https://www.cos.com/en-ch/men/menswear/shirts/cottonshirts/product/relaxed-striped-cotton-shirt-blue-striped-1358972002'));
+  assert.equal(l.kind, 'shirt');
+  assert.ok(l.facts.some(f => /Back length of size M is 77cm/.test(f)) || /77cm/.test(l.description));
+  assert.ok(!l.facts.some(f => /twill|barrel-leg/.test(f)), l.facts.join(' | '));
+  assert.equal(l.images.length, 0);
+});

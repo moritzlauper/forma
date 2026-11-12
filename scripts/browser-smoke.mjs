@@ -41,10 +41,23 @@ const auction = `<!doctype html><html><head><title>WRSTBHVR Hoodie XL</title></h
 <script>let s=53;setInterval(()=>{s=(s+59)%60;document.getElementById('clock').textContent='22 Min '+s+' Sek';},200);</script>
 </body></html>`;
 
+
+const cos = `<!doctype html><html><head><title>RELAXED STRIPED COTTON SHIRT</title><meta property="og:type" content="product"></head><body><main>
+<h1>RELAXED STRIPED COTTON SHIRT</h1><span>CHF 89.00</span>
+<div class="size-selector"><button>XS</button><button>S</button><button>M</button><button>L</button><button>XL</button></div><button>Add to bag</button>
+<div class="details"><p>Relaxed fit</p></div><div id="more"></div><div id="recs"></div>
+<img src="/img/shirt.jpg" width="600" height="800">
+<script>
+let n=0;const add=()=>{n++;const d=document.createElement('div');d.innerHTML='<a href="/en-ch/men/product/other-'+n+'-123456789"><img src="/img/o'+n+'.jpg" width="300" height="400"></a><p>Relaxed twill shirt '+n+'</p><span>CHF 79</span>';document.getElementById('recs').append(d);};
+setInterval(add,700);
+setTimeout(()=>{document.getElementById('more').innerHTML='<p>Back length of size M is 77cm / Model wears a size M</p>';},6500);
+</script></main></body></html>`;
+
 const context = await chromium.launchPersistentContext(join(temp, 'profile'), { channel: 'chromium', headless: true, args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
 let failed = false;
 try {
   await context.route('https://shop.test/**', route => /\.jpg$/.test(route.request().url()) ? route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.alloc(10) }) : route.fulfill({ status: 200, contentType: 'text/html', body: shop }));
+  await context.route('https://www.cos.test/**', route => /\.jpg$/.test(route.request().url()) ? route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.alloc(10) }) : route.fulfill({ status: 200, contentType: 'text/html', body: cos }));
   await context.route('https://www.ricardo.test/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: auction }));
   await context.route('https://img.ricardostatic.test/**', route => route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.alloc(10) }));
 
@@ -131,16 +144,28 @@ try {
   assert.equal(auctionState.decision.closest, 'XL');
   console.log('✓ marketplace listing assessed once while the countdown ticks:', auctionState.decision.headline);
 
+  // 3b. Recommendations and copy that load later do not restart the assessment.
+  const lazy = await context.newPage();
+  lazy.on('pageerror', e => errors.push(e.message));
+  await lazy.goto('https://www.cos.test/en-ch/men/menswear/shirts/product/relaxed-striped-cotton-shirt-1358972002');
+  await waitFor(async () => (await state(lazy))?.status === 'ready', 20000, 'lazy page assessment');
+  await lazy.waitForTimeout(9000);
+  assert.equal(await requests(), 3, 'one request despite lazily loaded cards and copy');
+  const lazyState = await state(lazy);
+  assert.equal(lazyState.status, 'ready');
+  assert.ok(!lazyState.listing.facts.some(f => /twill/.test(f)), 'recommendation cards are not facts');
+  console.log('✓ lazily loaded recommendations do not restart the assessment');
+
   // 4. Saving feedback recomputes locally, without a request.
   await worker.evaluate(async () => { await chrome.storage.local.set({ feedback: [{ name: 'WRSTBHVR Hoodie XL', url: 'https://www.ricardo.test/de/a/wrstbhvr-hoodie-xl-1334615952/', size: 'XL', value: 'Fits', note: '' }] }); });
   await waitFor(async () => (await state(listing))?.decision?.level === 'confirmed', 5000, 'local recompute');
-  assert.equal(await requests(), 2);
+  assert.equal(await requests(), 3);
   console.log('✓ feedback updates the verdict without an AI request');
 
   // 5. Pausing stops everything.
   await worker.evaluate(() => chrome.storage.local.set({ formaEnabled: false }));
   await page.reload(); await page.waitForTimeout(3000);
-  assert.equal(await requests(), 2);
+  assert.equal(await requests(), 3);
   assert.equal(await page.evaluate(() => !!document.getElementById('forma-loading')), false);
   console.log('✓ the off switch stops reading and requests');
 

@@ -1,7 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createPageConnector,READER_PROTOCOL} from '../src/page-connection';
-import {idlePageStatus} from '../src/page-status';
 function browser({allowed=true,reader=false,broken=false}={}){
  let loaded=reader;let injections=0;const messages:any[]=[];
  const api:any={permissions:{contains:async()=>allowed},scripting:{executeScript:async(args:any)=>{if(broken)throw Error('Cannot access page');if(args.files){injections++;loaded=true;}}},tabs:{sendMessage:async(_id:number,m:any)=>{messages.push(m);if(!loaded)throw Error('Receiving end does not exist');return m.type==='forma-ping'?{protocol:READER_PROTOCOL}:{accepted:true};}}};
@@ -29,21 +28,9 @@ test('Injection failure and unresponsive messages end in an actionable error',as
  b.api.tabs.sendMessage=()=>new Promise(()=>{});b.api.scripting.executeScript=async()=>{};
  assert.equal((await createPageConnector(b.api,5)(tab)).status,'error');
 });
-test('Absent data and interrupted AI never display an endless Waiting for AI state',()=>{
- const c={status:'connected' as const,message:'',at:1000};
- assert.equal(idlePageStatus(c,undefined,undefined,1001).title,'Reading the size guide…');
- assert.equal(idlePageStatus(c,undefined,undefined,12000).title,'Page scan did not respond');
- assert.equal(idlePageStatus(c,undefined,{status:'running',model:'test',startedAt:1000},47000).title,'Assessment interrupted');
- assert.equal(idlePageStatus(c,undefined,{status:'running',model:'test',startedAt:1000},2000).title,'Reviewing garment and fit…');
- assert.equal(idlePageStatus(c,{status:'error',at:1000,error:'Read failed'},undefined,2000).text,'Read failed');
-});
-
 test('Reopening a panel with a live reader only pings and never requests another scan',async()=>{const b=browser({reader:true});const connect=createPageConnector(b.api);for(let i=0;i<3;i++)await connect(tab);assert.ok(b.messages.every(m=>m.type==='forma-ping'));assert.equal(b.injections,0);});
 
 test('A reader recovered during a failed attachment is detected without another scan',async()=>{
  const b=browser({broken:true});let pings=0;b.api.tabs.sendMessage=async()=>{if(++pings===1)throw Error('not ready');return {protocol:READER_PROTOCOL,url:tab.url};};
  assert.equal((await createPageConnector(b.api)(tab)).status,'connected');assert.equal(pings,2);
-});
-test('A ready assessment is not replaced by an unrelated connection status',()=>{
- assert.equal(idlePageStatus({status:'error',message:'Connection failed',at:1},undefined,{status:'ready',model:'test',review:{size:'L',summary:'Saved result',reasons:[],limitations:[]}}).title,'Assessment completed');
 });

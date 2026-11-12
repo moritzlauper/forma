@@ -1,168 +1,233 @@
-import {installReaderStartup} from './reader-startup';
-import {migrateProfile} from './profile-migration';
-import {withEstimates} from './estimates';
-import {recommend,validateProduct,type Profile,type Product} from './fit';
-import {detect,type Page} from './detect';
-import {inputForReview,requestReview,type Assessment,type Feedback} from './assessment';
-import {createRequestBudget} from './request-budget';
-import {saveGoodFit,productIdentity,type GoodFit} from './good-fits';
-import {recordScan,enrichGoodFits,type ScanRecord} from './scan-library';
-let enabled=true;let activation=0;const controllers=new Set<AbortController>();
-const isEnabled=async()=>enabled&&(await chrome.storage.local.get('formaEnabled')).formaEnabled!==false;
-const startActiveReaders=installReaderStartup(chrome,isEnabled);
-const flights=new Map<string,Promise<Assessment>>();
-const settled=new Set<string>();
-const failed=new Set<string>();
-const budgetBlocked=new Set<string>();
-const reserveRequest=createRequestBudget(chrome.storage.local);
-const revisions=new Map<number,number>();
-let scanQueue:Promise<unknown>=Promise.resolve();
-function saveScan(page:Page,product:Product|null,source:ScanRecord['measurements'][number]['source']):Promise<ScanRecord[]>{
- const job=scanQueue.then(async()=>{const saved=(await chrome.storage.local.get('scanLibrary')).scanLibrary;const previous=Array.isArray(saved)?saved as ScanRecord[]:[];const next=recordScan(previous,page,product,Date.now(),source);if(next!==previous)await chrome.storage.local.set({scanLibrary:next});const savedFits=(await chrome.storage.local.get('goodFits')).goodFits;if(Array.isArray(savedFits)){const enriched=enrichGoodFits(savedFits,next);if(JSON.stringify(enriched)!==JSON.stringify(savedFits))await chrome.storage.local.set({goodFits:enriched});}return next;});
- scanQueue=job.catch(()=>{});return job;
-}
-chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
-chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
-chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
-chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
- if(msg.type==='forma-state'){isEnabled().then(value=>reply({enabled:value}));return true;}
- if(msg.type==='open-fit-editor'){
-  if(!sender.tab?.id||sender.frameId&&sender.frameId!==0||!['good','bad'].includes(msg.kind))return;
-  const tabId=sender.tab.id;
-  // Invoke immediately while Chrome still associates this message with the click.
-  const opened=chrome.sidePanel.open({tabId});
-  const job=scanQueue.then(async()=>{
-   const data=await chrome.storage.session.get('page:'+tabId);const page=data['page:'+tabId] as Page&{product:Product|null}|undefined;
-   if(!page||productIdentity(page.url)!==productIdentity(sender.url||''))throw Error('Read this product first.');
-   if(msg.kind==='good'){
-    const data=await chrome.storage.local.get(['goodFits','scanLibrary']);const entries=(data.goodFits||[]) as GoodFit[];
-    const previous=entries.find(e=>productIdentity(e.url)===productIdentity(page.url));
-    const entry=previous||{url:page.url,name:page.name,size:'',reason:'',savedAt:Date.now(),category:page.product?.category||page.detection?.category||null,product:page.product,charts:page.charts,images:page.images,evidence:page.evidence,description:page.text};
-    await chrome.storage.local.set({goodFits:saveGoodFit(entries,enrichGoodFits([entry],(data.scanLibrary||[]) as ScanRecord[])[0])});
-   }
-   await chrome.storage.session.set({['fit-editor:'+tabId]:{kind:msg.kind,url:page.url,id:crypto.randomUUID()}});
-  });scanQueue=job.catch(()=>{});
-  Promise.all([opened,job]).then(()=>reply({ok:true})).catch(()=>reply({error:'Could not open fit details. Open FORMA from its toolbar icon.'}));return true;
- }
- if(msg.type==='save-good-fit'||msg.type==='remove-good-fit'){
-  if(sender.url!==chrome.runtime.getURL('index.html'))return;
-  const job=scanQueue.then(async()=>{
-   const data=await chrome.storage.local.get(['goodFits','scanLibrary']);const entries=Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[];const scans=Array.isArray(data.scanLibrary)?data.scanLibrary as ScanRecord[]:[];
-   let next:GoodFit[];
-   if(msg.type==='remove-good-fit')next=entries.filter(e=>productIdentity(e.url)!==productIdentity(String(msg.url||'')));
-   else{
-    const entry=msg.entry as GoodFit;if(!entry||typeof entry.url!=='string'||!/^https?:/.test(entry.url)||typeof entry.name!=='string'||typeof entry.size!=='string'||typeof entry.reason!=='string')throw Error('Invalid saved fit.');
-    const previous=entries.find(e=>productIdentity(e.url)===productIdentity(entry.url));
-    const merged=enrichGoodFits([{...previous,...entry}],scans)[0];next=saveGoodFit(entries,merged);
-   }
-   await chrome.storage.local.set({goodFits:next});return {goodFits:next};
-  });scanQueue=job.catch(()=>{});job.then(reply).catch(()=>reply({error:'Could not save your good fit. Please retry.'}));return true;
- }
- if(msg.type==='reserve-ai-request'){
-  if(sender.tab||sender.url!==chrome.runtime.getURL('index.html'))return;
-  isEnabled().then(async on=>on?reserveRequest():{allowed:false,error:'FORMA is off. Turn it on in the header to analyse.'}).then(reply).catch(()=>reply({error:'Could not read the request budget.'}));return true;
- }
- if(!['page','page-progress','page-error'].includes(msg.type)||!sender.tab?.id)return;
- const tab=sender.tab.id;
- const revision=(revisions.get(tab)||0)+1;revisions.set(tab,revision);
- const generation=activation;
- (async()=>{
-  if(!await isEnabled()){reply({paused:true});return;}
-  const page:Page={url:sender.url||'',name:String(msg.name||'').slice(0,200),text:String(msg.text||'').slice(0,16000),charts:Array.isArray(msg.charts)?msg.charts.slice(0,12).map((t:{text?:unknown;context?:unknown})=>({text:String(t.text||'').slice(0,8000),context:String(t.context||'').slice(0,10000)})):[]};
-  if(msg.evidence&&typeof msg.evidence==='object')page.evidence={sizes:Array.isArray(msg.evidence.sizes)?msg.evidence.sizes.filter((s:unknown)=>typeof s==='string'&&s.length<=30).slice(0,60):[],models:Array.isArray(msg.evidence.models)?msg.evidence.models.filter((m:any)=>Number.isFinite(m.heightCm)&&typeof m.size==='string'&&typeof m.quote==='string').slice(0,3).map((m:any)=>({heightCm:m.heightCm,size:m.size.slice(0,30),quote:m.quote.slice(0,250)})):[],fit:Array.isArray(msg.evidence.fit)?msg.evidence.fit.filter((s:unknown)=>typeof s==='string'&&s.length<=40).slice(0,12):[],sourceHTML:String(msg.evidence.sourceHTML||'').slice(0,12000)};
-  page.detection=msg.detection;page.manual=msg.manual===true;
-  if(msg.type!=='page'){
-   const error=msg.type==='page-error';
-   const previous=(await chrome.storage.session.get('page:'+tab))['page:'+tab] as (Page&{assessment?:Assessment})|undefined;
-   if(revisions.get(tab)!==revision){reply({stale:true});return;}
-   const retained=previous?.url===page.url&&previous?.assessment?.status==='ready'?previous:null;
-   await chrome.storage.session.set({['page:'+tab]:{...(retained||{...page,product:null,result:null,reason:''}),scan:{status:error?'error':'reading',at:Date.now(),error:error?'Could not reread this page. Your last completed assessment is kept.':undefined}}});
-   reply({accepted:true});return;
-  }
-  if(page.detection?.kind!=='clothing'&&!page.manual){
-   await chrome.storage.session.set({['page:'+tab]:{...page,text:'',charts:[],images:[],product:null,result:null,reason:'No clothing product detected locally. Use “Analyse this page” to start manually.'}});
-   reply({url:page.url,skipped:true});return;
-  }
-  page.images=Array.isArray(msg.images)?msg.images.filter((s:unknown)=>{if(typeof s!=='string')return false;try{const u=new URL(s);return u.protocol==='https:'&&!u.username&&!u.password&&!/^(localhost|127\.|192\.168\.|10\.)/.test(u.hostname);}catch{return false;}}).slice(0,2):[];
-  const data=await chrome.storage.local.get(['profile','description','products','settings','apiKey','feedback','goodFits']);
-  const saved=(data.products as Record<string,{product:Product;fingerprint:string}>|undefined)?.[page.url];
-  const fingerprint=JSON.stringify([page.name,page.charts]);
-  const found=detect(page);
-  const product=saved?.fingerprint===fingerprint?validateProduct(saved.product):found.product;
-  const scans=await saveScan(page,product,product===found.product?'shop-chart':'user-confirmed-chart');
-  const settings=data.settings as {mode?:string;model?:string;limit?:number;assessmentVersion?:number}|undefined;
-  const mode=settings?.assessmentVersion===1?(settings.mode||'anthropic'):(settings?.mode==='ollama'?'ollama':'anthropic');
-  const model=mode==='ollama'?settings?.model||'':'claude-haiku-5-5';
-  const key=typeof data.apiKey==='string'?data.apiKey:'';
-  let assessment:Assessment|undefined;
-  if(mode!=='none'){
-   const origin=mode==='ollama'?'http://localhost:11434/*':'https://api.anthropic.com/*';
-   if(!data.profile)assessment={status:'blocked',model,error:'Set up your fit profile first.'};
-   else if(mode==='anthropic'&&!key)assessment={status:'blocked',model,error:'Add your API key in Settings to start AI fit assessment.'};
-   else if(!await chrome.permissions.contains({origins:[origin]}))assessment={status:'blocked',model,error:'Allow the AI connection in Settings. No AI request has been sent.'};
-   else{
-    const input=inputForReview(page,product,withEstimates(migrateProfile(data.profile as Profile)),(data.feedback||[]) as Feedback[],typeof data.description==='string'?data.description:'',enrichGoodFits(Array.isArray(data.goodFits)?data.goodFits as GoodFit[]:[],scans),scans);
-    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fit-v21|'+mode+'|'+model+'|'+JSON.stringify(input))))).map(b=>b.toString(16).padStart(2,'0')).join('');
-    await chrome.storage.session.set({['page:'+tab]:{...page,product,result:null,reason:found.reason,assessment:{status:'running',model,startedAt:Date.now()}}});
-    if(msg.fresh===true&&settled.has(digest)||msg.retry===true&&failed.has(digest)){flights.delete(digest);settled.delete(digest);failed.delete(digest);budgetBlocked.delete(digest);}
-    let job=flights.get(digest);const reused=!!job&&settled.has(digest);
-    if(!job){
-     job=(async():Promise<Assessment>=>{
-      const cache=(await chrome.storage.local.get('fitCache')).fitCache as Record<string,Assessment>|undefined;
-      if(cache?.[digest]&&msg.fresh!==true)return {...cache[digest],cached:true};
-      if(generation!==activation||!await isEnabled())return {status:'blocked',model,error:'FORMA is off.'};
-      const budget=await reserveRequest();
-      if(!budget.allowed)return {status:'blocked',model,code:'request_limit',usage:budget,error:`You have used ${budget.used} of ${budget.limit} AI requests. Add 100 more in the FORMA panel to continue.`};
-      const controller=new AbortController();controllers.add(controller);
-      try{
-       if(generation!==activation||!await isEnabled())throw Error('FORMA is off.');
-       const review=await requestReview(input,mode,model,key,async()=>generation===activation&&await isEnabled()&&(await reserveRequest()).allowed,controller.signal);
-       if(controller.signal.aborted||generation!==activation)throw Error('FORMA is off.');
-       const entry:Assessment={status:'ready',model,cached:false,review};
-       const latest=(await chrome.storage.local.get('fitCache')).fitCache as Record<string,Assessment>||{};
-       latest[digest]=entry;await chrome.storage.local.set({fitCache:Object.fromEntries(Object.entries(latest).slice(-40))});
-       return entry;
-      }catch(e){return {status:'error',model,error:e instanceof Error?e.message:'AI assessment failed.'};}finally{controllers.delete(controller);}
-     })().then(entry=>{if(generation!==activation)return entry;settled.add(digest);if(entry.status==='error')failed.add(digest);if(entry.code==='request_limit')budgetBlocked.add(digest);return entry;});
-     flights.set(digest,job);
-     // Retain failed attempts in memory too: DOM updates must not trigger paid retries.
-    }
-    assessment=await job;
-    if(reused&&assessment.status==='ready')assessment={...assessment,cached:true};
-   }
-  }
-  const result=mode==='none'&&product&&data.profile?recommend(data.profile as Profile,product):null;
-  if(generation!==activation||!await isEnabled()){reply({paused:true});return;}
-  if(revisions.get(tab)!==revision){reply({url:page.url,stale:true});return;}
-  await chrome.storage.session.set({['page:'+tab]:{...page,product,result,reason:found.reason,assessment}});
-  const message=assessment?assessment.status==='ready'?assessment.review!.summary:assessment.error||'AI is reviewing your fit…':result?.message||found.reason;
-  reply({url:page.url,result:assessment?{message,ranked:[],status:assessment.status,overallFit:assessment.review?.overallFit,size:assessment.review?.size,scores:assessment.review?.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible,reason:s.reason})),reasons:assessment.review?.reasons||[],basis:assessment.review?.basis,model:assessment.model,cached:assessment.cached}:result||{message,ranked:[]}});
+import { installReaderStartup } from './reader-startup';
+import { createRequestBudget } from './request-budget';
+import { productIdentity, sha256 } from './core/identity';
+import { KINDS } from './core/types';
+import type { Listing, PageState, Profile, Reading, LibraryEntry } from './core/types';
+import { decide } from './assess/decide';
+import { localSizes } from './assess/charts';
+import { buildReferences, hasPersonalBasis, normaliseFeedback, normaliseGoodFits, normaliseLibrary, saveToLibrary, toPerson } from './assess/person';
+import { providerOf } from './core/settings';
+import { localReading, mergeLocal, READER_VERSION, ReaderError, readerInput, readWithAnthropic, readWithOllama, validateReading } from './assess/reader';
 
- })().catch(async()=>{
-  if(revisions.get(tab)===revision)await chrome.storage.session.set({['page:'+tab]:{url:sender.url||'',name:String(msg.name||'').slice(0,200),text:'',charts:[],product:null,result:null,scan:{status:'error',at:Date.now(),error:'The assessment could not start. Press Refresh to reconnect.'}}}).catch(()=>{});
-  reply({error:'The assessment could not start. Press Refresh to reconnect.'});
- });return true;
+const ANTHROPIC_ORIGIN = 'https://api.anthropic.com/*';
+const OLLAMA_ORIGIN = 'http://localhost:11434/*';
+const CACHE_SIZE = 40;
+
+let enabled = true;
+const isEnabled = async () => enabled && (await chrome.storage.local.get('formaEnabled')).formaEnabled !== false;
+const startActiveReaders = installReaderStartup(chrome, isEnabled);
+const reserveRequest = createRequestBudget(chrome.storage.local);
+
+chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+// ---------------------------------------------------------------- Listing guard
+
+const s = (v: unknown, max: number) => typeof v === 'string' ? v.slice(0, max) : '';
+/** The content script runs on arbitrary pages; bound everything it sends. */
+function sanitize(raw: any, url: string): Listing | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const strings = (v: unknown, n: number, max: number) => Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, n).map(x => x.slice(0, max)) : [];
+  return {
+    url, site: s(raw.site, 100), marketplace: raw.marketplace === true, title: s(raw.title, 200), brand: s(raw.brand, 80),
+    breadcrumbs: strings(raw.breadcrumbs, 8, 60),
+    attributes: (Array.isArray(raw.attributes) ? raw.attributes : []).filter((a: any) => typeof a?.name === 'string' && typeof a?.value === 'string').slice(0, 30).map((a: any) => ({ name: a.name.slice(0, 40), value: a.value.slice(0, 120) })),
+    sizes: (Array.isArray(raw.sizes) ? raw.sizes : []).filter((x: any) => typeof x?.label === 'string').slice(0, 40).map((x: any) => ({ label: x.label.slice(0, 20), available: typeof x.available === 'boolean' ? x.available : null, selected: x.selected === true })),
+    description: s(raw.description, 3000), facts: strings(raw.facts, 30, 300),
+    tables: (Array.isArray(raw.tables) ? raw.tables : []).slice(0, 6).map((t: any) => ({ caption: s(t?.caption, 400), rows: (Array.isArray(t?.rows) ? t.rows : []).slice(0, 40).map((r: unknown) => strings(r, 14, 40)) })),
+    images: strings(raw.images, 4, 600).filter(u => { try { const x = new URL(u); return x.protocol === 'https:' && !x.username && !/^(localhost|127\.|10\.|192\.168\.)/.test(x.hostname); } catch { return false; } }),
+    kind: KINDS.includes(raw.kind) ? raw.kind : null, product: raw.product === true, signals: strings(raw.signals, 10, 40),
+  };
+}
+
+// ---------------------------------------------------------------- State
+
+const generations = new Map<number, number>();
+const flights = new Map<string, Promise<Reading>>();
+const controllers = new Set<AbortController>();
+let keepAlive: ReturnType<typeof setInterval> | undefined;
+
+/** Long AI answers must not lose the worker. A trivial API call every 20 s keeps it alive. */
+function track(controller: AbortController) {
+  controllers.add(controller);
+  keepAlive ??= setInterval(() => { void chrome.runtime.getPlatformInfo(); }, 20_000);
+}
+function untrack(controller: AbortController) {
+  controllers.delete(controller);
+  if (!controllers.size && keepAlive) { clearInterval(keepAlive); keepAlive = undefined; }
+}
+
+const slim = (state: PageState): PageState => ({ ...state, listing: undefined, reading: state.reading ? { ...state.reading, sizes: [] } : undefined });
+
+async function publish(tab: number, state: PageState) {
+  await chrome.storage.session.set({ ['page:' + tab]: state });
+  chrome.tabs.sendMessage(tab, { type: 'forma-state', state: slim(state) }, { frameId: 0 }).catch(() => {});
+}
+
+async function personal() {
+  const data = await chrome.storage.local.get(['profile', 'description', 'feedback', 'goodFits', 'formaLibrary', 'scanLibrary']);
+  return {
+    person: toPerson(data.profile as Profile | undefined, typeof data.description === 'string' ? data.description : ''),
+    goodFits: normaliseGoodFits(data.goodFits),
+    feedback: normaliseFeedback(data.feedback),
+    library: normaliseLibrary(data.formaLibrary, data.scanLibrary),
+  };
+}
+
+async function remember(listing: Listing, reading: Reading) {
+  const { formaLibrary, scanLibrary } = await chrome.storage.local.get(['formaLibrary', 'scanLibrary']);
+  const entry: LibraryEntry = { url: productIdentity(listing.url), name: listing.title, kind: reading.garment.kind, at: Date.now(), image: listing.images[0], sizes: reading.sizes.filter(x => x.measures.length).map(x => ({ label: x.label, measures: x.measures })) };
+  if (entry.sizes.length) await chrome.storage.local.set({ formaLibrary: saveToLibrary(normaliseLibrary(formaLibrary, scanLibrary), entry) });
+}
+
+type Options = { manual: boolean; fresh: boolean };
+
+async function assess(tab: number, listing: Listing, { manual, fresh }: Options) {
+  const generation = (generations.get(tab) || 0) + 1;
+  generations.set(tab, generation);
+  const current = () => generations.get(tab) === generation;
+  const base = { url: listing.url, identity: productIdentity(listing.url), title: listing.title, manual, listing, at: Date.now() };
+  const done = async (state: Omit<PageState, 'url' | 'identity' | 'title' | 'at'>) => { if (current()) await publish(tab, { ...base, ...state, at: Date.now() }); };
+
+  if (!await isEnabled()) return done({ status: 'blocked', code: 'paused', message: 'FORMA is off. Turn it on to assess this page.' });
+  if (!manual && (!listing.product || !listing.kind)) return done({ status: 'other', message: listing.product ? 'This product does not look like clothing. Use “Analyse this page” to assess it anyway.' : 'No single clothing product on this page.' });
+  await done({ status: 'assessing' });
+
+  const { person, goodFits, feedback, library } = await personal();
+  const refs = buildReferences(goodFits, feedback, library, listing.url, listing.kind);
+  const { settings, apiKey } = await chrome.storage.local.get(['settings', 'apiKey']);
+  const { mode, model } = providerOf(settings);
+  const local = localReading(listing);
+
+  let reading: Reading;
+  let cached = false;
+  if (mode === 'none') reading = local;
+  else {
+    const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+    if (!hasPersonalBasis(person, refs)) return done({ status: 'blocked', code: 'profile', message: 'Add your height, usual sizes or a garment that fits you in “Your profile”.' });
+    if (mode === 'anthropic' && !key) return done({ status: 'blocked', code: 'key', message: 'Add your Anthropic API key in Settings to start fit assessments.' });
+    if (mode === 'ollama' && !model) return done({ status: 'blocked', code: 'key', message: 'Enter the name of your Ollama model in Settings.' });
+    if (!await chrome.permissions.contains({ origins: [mode === 'ollama' ? OLLAMA_ORIGIN : ANTHROPIC_ORIGIN] })) return done({ status: 'blocked', code: 'permission', message: 'Allow the AI connection in Settings. No request has been sent.' });
+
+    const images = mode === 'anthropic' ? listing.images.slice(0, 3) : [];
+    const input = readerInput(listing, person, refs, images.length);
+    const digest = await sha256([READER_VERSION, mode, model, JSON.stringify(input), images.join('|')].join('\n'));
+    const cache = ((await chrome.storage.local.get('readingCache')).readingCache || {}) as Record<string, Reading>;
+    if (!fresh && cache[digest]) { reading = cache[digest]; cached = true; }
+    else {
+      let flight = fresh ? undefined : flights.get(digest);
+      if (!flight) {
+        flight = (async () => {
+          const budget = await reserveRequest();
+          if (!budget.allowed) throw new ReaderError(await isEnabled() ? `You have used ${budget.used} of ${budget.limit} AI requests. Allow more in Settings.` : 'FORMA is off.');
+          const controller = new AbortController(); track(controller);
+          try {
+            let raw: unknown; let used = images.length;
+            if (mode === 'ollama') raw = await readWithOllama(input, model, controller.signal);
+            else {
+              try { raw = await readWithAnthropic(input, images, model, key, controller.signal); }
+              catch (error) {
+                if (!(error instanceof ReaderError) || !error.retryWithoutImages) throw error;
+                if (!(await reserveRequest()).allowed) throw new ReaderError('The photos could not be loaded and the request limit prevents a retry without them.');
+                used = 0;
+                raw = await readWithAnthropic(readerInput(listing, person, refs, 0), [], model, key, controller.signal);
+              }
+            }
+            const result: Reading = { ...validateReading(raw, listing), reader: 'ai', imagesUsed: used };
+            const latest = ((await chrome.storage.local.get('readingCache')).readingCache || {}) as Record<string, Reading>;
+            delete latest[digest]; latest[digest] = result;
+            await chrome.storage.local.set({ readingCache: Object.fromEntries(Object.entries(latest).slice(-CACHE_SIZE)) });
+            return result;
+          } finally { untrack(controller); }
+        })();
+        flights.set(digest, flight);
+        flight.catch(() => {}).finally(() => { if (flights.get(digest) === flight) flights.delete(digest); });
+      }
+      try { reading = await flight; }
+      catch (error) {
+        const message = error instanceof Error ? error.message : 'AI assessment failed.';
+        const limit = /AI requests/.test(message);
+        return done({ status: limit ? 'blocked' : 'error', code: limit ? 'limit' : undefined, message, model });
+      }
+    }
+    reading = mergeLocal(reading, localSizes(listing));
+  }
+  const decision = decide(listing, reading, person, refs);
+  if (!current()) return;
+  await remember(listing, reading).catch(() => {});
+  await done({ status: 'ready', reading, decision, model: mode === 'none' ? 'local' : model, cached });
+}
+
+/** Profile or feedback changed: recompute every open page locally, without a new AI request. */
+async function recomputeOpenPages() {
+  const { person, goodFits, feedback, library } = await personal();
+  const all = await chrome.storage.session.get(null);
+  for (const [key, value] of Object.entries(all)) {
+    if (!key.startsWith('page:')) continue;
+    const state = value as PageState;
+    const tab = Number(key.slice(5));
+    if (state.status !== 'ready' || !state.reading || !state.listing) continue;
+    const refs = buildReferences(goodFits, feedback, library, state.listing.url, state.listing.kind);
+    await publish(tab, { ...state, decision: decide(state.listing, state.reading, person, refs), at: Date.now() });
+  }
+}
+
+/** Settings, key or permission changed: retry pages that were waiting for exactly that. */
+async function retryBlockedPages() {
+  const all = await chrome.storage.session.get(null);
+  for (const [key, value] of Object.entries(all)) {
+    const state = value as PageState;
+    if (!key.startsWith('page:') || state.status !== 'blocked' || !state.listing || !['key', 'permission', 'limit', 'profile'].includes(state.code || '')) continue;
+    void assess(Number(key.slice(5)), state.listing, { manual: !!state.manual, fresh: false });
+  }
+}
+
+// ---------------------------------------------------------------- Messages
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type === 'forma-enabled?') { isEnabled().then(value => reply({ enabled: value })); return true; }
+  const tab = sender.tab?.id;
+  if (msg?.type === 'listing') {
+    if (!tab || (sender.frameId ?? 0) !== 0 || !sender.url) return;
+    const listing = sanitize(msg.listing, sender.url);
+    if (!listing) { reply({ accepted: false }); return; }
+    isEnabled().then(on => {
+      reply(on ? { accepted: true } : { accepted: false, paused: true });
+      if (on) void assess(tab, listing, { manual: msg.manual === true, fresh: msg.fresh === true }).catch(async () => {
+        await publish(tab, { url: listing.url, identity: productIdentity(listing.url), title: listing.title, status: 'error', at: Date.now(), listing, message: 'The assessment could not run. Press Refresh to try again.' });
+      });
+    });
+    return true;
+  }
+  if (msg?.type === 'open-panel') {
+    if (!tab || !['details', 'good', 'bad'].includes(msg.kind)) return;
+    // Open synchronously while Chrome still associates the message with the click.
+    const opened = chrome.sidePanel.open({ tabId: tab });
+    const intent = msg.kind === 'details' ? Promise.resolve() : chrome.storage.session.set({ ['fit-editor:' + tab]: { kind: msg.kind, url: sender.url, id: crypto.randomUUID() } });
+    Promise.all([opened, intent]).then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
 });
-chrome.permissions.onRemoved.addListener(async()=>{
- const scripts=await chrome.scripting.getRegisteredContentScripts();
- for(const script of scripts)if(!await chrome.permissions.contains({origins:script.matches!}))await chrome.scripting.unregisterContentScripts({ids:[script.id]});
+
+chrome.tabs.onRemoved.addListener(tab => { generations.delete(tab); void chrome.storage.session.remove(['page:' + tab, 'fit-editor:' + tab]); });
+
+chrome.permissions.onRemoved.addListener(async () => {
+  const scripts = await chrome.scripting.getRegisteredContentScripts();
+  for (const script of scripts) if (!await chrome.permissions.contains({ origins: script.matches! })) await chrome.scripting.unregisterContentScripts({ ids: [script.id] });
 });
-chrome.storage.onChanged.addListener(async(changes,area)=>{
- if(area==='local'&&changes.formaEnabled){
-  enabled=changes.formaEnabled.newValue!==false;activation++;
-  if(enabled)startActiveReaders();
-  if(!enabled){for(const controller of controllers)controller.abort();flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
-  for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'forma-enabled',enabled}).catch(()=>{});
-  return;
- }
- if(!await isEnabled())return;
- // Saved profile notes are applied on the next scan or by explicit request.
- if(area!=='local'||!['profile','settings','apiKey','feedback'].some(k=>{const change=changes[k];if(!change)return false;const canonical=(v:any)=>k==='profile'&&v?withEstimates(migrateProfile(v)):v;return JSON.stringify(canonical(change.oldValue))!==JSON.stringify(canonical(change.newValue));}))return;
- if(changes.apiKey){flights.clear();settled.clear();failed.clear();budgetBlocked.clear();}
- if(changes.settings){
-  // Budget edits release blocked work, but must not duplicate running requests.
-  for(const digest of budgetBlocked){flights.delete(digest);settled.delete(digest);}
-  budgetBlocked.clear();
- }
- for(const tab of await chrome.tabs.query({}))if(tab.id)chrome.tabs.sendMessage(tab.id,{type:'refresh',reassess:true}).catch(()=>{});
+chrome.permissions.onAdded.addListener(() => { void retryBlockedPages(); });
+
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local') return;
+  if (changes.formaEnabled) {
+    enabled = changes.formaEnabled.newValue !== false;
+    if (!enabled) { for (const c of controllers) c.abort(); flights.clear(); }
+    else startActiveReaders();
+    for (const t of await chrome.tabs.query({})) if (t.id) chrome.tabs.sendMessage(t.id, { type: 'forma-enabled', enabled }).catch(() => {});
+    return;
+  }
+  if (!await isEnabled()) return;
+  if (changes.profile || changes.description || changes.feedback || changes.goodFits) void recomputeOpenPages();
+  if (changes.apiKey || changes.settings || changes.profile) void retryBlockedPages();
 });

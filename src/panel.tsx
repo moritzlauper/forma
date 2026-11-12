@@ -1,231 +1,426 @@
-import {applyProfileUpdate,profileFeedbackUpdate} from './profile-update';
-import {FitComparison} from './fit-comparison';
-import {overallFit,overallScore} from './fit-rating';
-import React,{useEffect,useState,useRef} from 'react';
-import {createRoot} from 'react-dom/client';
-import {keys,labels,parseTable,recommend,type Profile,type Product,type Category,type Key} from './fit';
-import {initialText,understand} from './profile-text';
-import type {Page} from './detect';
-import {extract} from './ai';
-import type {Assessment,Feedback} from './assessment';
-import {withEstimates} from './estimates';
-import {DEFAULT_REQUEST_LIMIT,requestLimit,additionalRequests,hasNoRequestCap} from './request-budget';
-import {createPageConnector,type Connection} from './page-connection';
-import {idlePageStatus,type ScanState} from './page-status';
-import {saveGoodFit,productIdentity,type GoodFit} from './good-fits';
-import {GoodFitEditor} from './good-fit-editor';
-import {FitDetailsForm,type FitDetails} from './fit-details-form';
-import {ProfileNotes} from './profile-notes';
-import {ProfileBasics} from './profile-basics';
-import {migrateProfile,consolidateFitNotes} from './profile-migration';
-import {automaticDetectionEnabled,enableAutomaticDetection} from './automatic-detection';
-import {sizeConversion,measurementTable} from './chart-shape';
-import {enrichGoodFits} from './scan-library';
-const extension=typeof chrome!=='undefined'&&!!chrome.storage;
-const connectPage=extension?createPageConnector():null;
-const categories:Record<Category,string>={top:'Top / hoodie',jacket:'Jacket',trousers:'Trousers',dress:'Dress / jumpsuit',shoes:'Shoes'};
-const defaultProfile:Profile={name:'My fit',mode:'body',category:'top',fit:'regular',measures:{},context:{height:0,weight:0,waistLabel:'',style:'',concerns:[]}};
-type Snapshot=Page&{scan?:ScanState;assessment?:Assessment;product:Product|null;reason:string;result:ReturnType<typeof recommend>|null};
-const store={async get(k:string):Promise<any>{return extension?(await chrome.storage.local.get(k))[k]:JSON.parse(localStorage.getItem(k)||'null');},async set(k:string,v:unknown){if(extension)await chrome.storage.local.set({[k]:v});else localStorage.setItem(k,JSON.stringify(v));}};
-function App(){
- const [step,S]=useState('shop'),[profile,P]=useState<Profile>(withEstimates(defaultProfile)),[ready,R]=useState(false),[description,D]=useState(initialText),[draft,DP]=useState<ReturnType<typeof understand>|null>(null),[snapshot,V]=useState<Snapshot|null>(null),[product,G]=useState<Product|null>(null),[notice,N]=useState(''),[tab,B]=useState<number>(),[dark,Dark]=useState(false);
- const [table,T]=useState(''),[category,C]=useState<Category>('top'),[type,Y]=useState<'body'|'garment'>('garment'),[unit,U]=useState<'cm'|'in'>('cm'),[flat,F]=useState(false);
- const [mode,M]=useState('anthropic'),[model,Model]=useState('claude-haiku-5-5'),[key,K]=useState(''),[busy,Busy]=useState(false),[count,Count]=useState(0),[limit,Limit]=useState(DEFAULT_REQUEST_LIMIT),[limitDraft,LimitDraft]=useState(String(DEFAULT_REQUEST_LIMIT)),[budgetBusy,BudgetBusy]=useState(false);
- const [enabled,Enabled]=useState(true),[powerBusy,PowerBusy]=useState(false);const extraction=useRef<AbortController|null>(null);
- const [notesDraft,NotesDraft]=useState('');
- const profileLoaded=useRef('');
- const notesWrites=useRef<Promise<void>>(Promise.resolve());
- const [fitIntent,FitIntent]=useState<{kind:string;url:string;id:string}|null>(null);
- useEffect(()=>{if(!fitIntent)return;S('shop');const timer=setTimeout(()=>document.getElementById('popup-fit-editor')?.scrollIntoView({block:'center',behavior:'smooth'}),150);return()=>clearTimeout(timer);},[fitIntent?.id]);
- const [autoEnabled,AutoEnabled]=useState(false),[autoBusy,AutoBusy]=useState(false),[autoMessage,AutoMessage]=useState('');
- useEffect(()=>{if(!extension)return;const refresh=()=>automaticDetectionEnabled().then(AutoEnabled).catch(()=>AutoMessage('Could not check automatic detection. Reload the FORMA panel.'));refresh();chrome.permissions.onAdded.addListener(refresh);chrome.permissions.onRemoved.addListener(refresh);return()=>{chrome.permissions.onAdded.removeListener(refresh);chrome.permissions.onRemoved.removeListener(refresh);};},[]);
- async function activateAutomatic(){AutoBusy(true);AutoMessage('Waiting for Chrome’s website permission…');try{await enableAutomaticDetection(chrome,async t=>{await readPage(t);});AutoEnabled(await automaticDetectionEnabled());AutoMessage('Automatic detection is active. Open any clothing product page.');}catch(e){AutoMessage(e instanceof Error?e.message:'Could not enable detection.');}finally{AutoEnabled(await automaticDetectionEnabled().catch(()=>false));AutoBusy(false);}}
- const [goodFits,GoodFits]=useState<GoodFit[]>([]),[fitFeedback,FitFeedback]=useState<Feedback[]>([]);
- useEffect(()=>{store.get('feedback').then(value=>FitFeedback(Array.isArray(value)?value:[]));},[]);
- const [connection,ConnectionState]=useState<Connection>({status:'checking',message:'Connecting to this page…',at:Date.now()}),[now,Now]=useState(Date.now());
- const [unlimited,Unlimited]=useState(false),[unlimitedDraft,UnlimitedDraft]=useState(false),[setupNeeded,SetupNeeded]=useState(false),[setupBusy,SetupBusy]=useState(false);
- const run=(f:()=>void|Promise<void>)=>async()=>{N('');try{await f();}catch(e){N(e instanceof Error?e.message:String(e));}};
- useEffect(()=>{Promise.all([store.get('profile'),store.get('description'),store.get('aiCount'),store.get('settings'),store.get('goodFits'),store.get('formaEnabled')]).then(async([p,d,c,s,g,on])=>{
-  Enabled(on!==false);GoodFits(Array.isArray(g)?g:[]);
-  const merged=consolidateFitNotes(p?migrateProfile(p):defaultProfile,typeof d==='string'?d:'');
-  if(merged.description!==d)await store.set('description',merged.description);d=merged.description;
-  const loaded=withEstimates(merged.profile);profileLoaded.current=JSON.stringify(loaded);P(loaded);if(p&&JSON.stringify(p)!==profileLoaded.current)store.set('profile',loaded).catch(()=>N('Could not save the repaired profile.'));
-  if(d)D(d);Count(c||0);Limit(requestLimit(s));LimitDraft(String(requestLimit(s)));Unlimited(hasNoRequestCap(s));UnlimitedDraft(hasNoRequestCap(s));if(s){M(s.assessmentVersion===1?(s.mode||'anthropic'):(s.mode==='ollama'?'ollama':'anthropic'));Model(s.mode==='ollama'?(s.model||''):'claude-haiku-5-5');}R(true);
- });if(extension)Promise.all([chrome.storage.session.get('key'),chrome.storage.local.get('apiKey')]).then(async([session,local])=>{const saved=typeof session.key==='string'&&session.key?session.key:typeof local.apiKey==='string'?local.apiKey:'';K(saved);if(saved)await chrome.storage.local.set({apiKey:saved});SetupNeeded(!saved||!await chrome.permissions.contains({origins:['https://api.anthropic.com/*']}));});},[]);
- useEffect(()=>{if(!ready)return;const value=withEstimates(profile);if(JSON.stringify(value)===profileLoaded.current)return;const timer=setTimeout(()=>store.set('profile',value).then(()=>{profileLoaded.current=JSON.stringify(value);}).catch(()=>N('Could not save profile.')),400);return()=>clearTimeout(timer);},[profile,ready]);
- useEffect(()=>{if(ready)store.get('settings').then(s=>store.set('settings',{...s,mode,model,limit:requestLimit(s),limitVersion:1,assessmentVersion:1})).catch(()=>N('Could not save settings.'));},[mode,model,ready]);
- useEffect(()=>{document.documentElement.dataset.theme=dark?'dark':'light';},[dark]);
- useEffect(()=>{const timer=setInterval(()=>Now(Date.now()),1000);return()=>clearInterval(timer);},[]);
- useEffect(()=>{
-  if(!extension||!connectPage||!ready||!enabled)return;let revision=0;let activeId:number|undefined;
-  const attach=async()=>{
-   const current=++revision;const [t]=await chrome.tabs.query({active:true,currentWindow:true});if(current!==revision)return;
-   activeId=t?.id;ConnectionState({status:'checking',message:'Connecting to this page…',at:Date.now()});
-   if(t?.status==='loading')return;
-   const state=await connectPage(t||{});if(current===revision)ConnectionState(state);
-  };
-  const updated=(id:number,change:chrome.tabs.OnUpdatedInfo)=>{if(id===activeId&&(change.status==='complete'||change.url))attach().catch(()=>ConnectionState({status:'error',message:'Could not connect. Press Refresh to try again.',at:Date.now()}));};
-  const activate=()=>{attach().catch(()=>ConnectionState({status:'error',message:'Could not connect. Press Refresh to try again.',at:Date.now()}));};
-  activate();chrome.tabs.onActivated.addListener(activate);chrome.tabs.onUpdated.addListener(updated);chrome.permissions.onAdded.addListener(activate);
-  return()=>{revision++;chrome.tabs.onActivated.removeListener(activate);chrome.tabs.onUpdated.removeListener(updated);chrome.permissions.onAdded.removeListener(activate);};
- },[ready,enabled]);
- useEffect(()=>{
-  if(!extension)return;let revision=0;
-  const refresh=async()=>{const rev=++revision;const tabs=await chrome.tabs.query({active:true,currentWindow:true});const t=tabs[0];if(!t?.id){V(null);G(null);return;}B(t.id);const d=await chrome.storage.session.get(['page:'+t.id,'fit-editor:'+t.id]);if(rev!==revision)return;const s=d['page:'+t.id] as Snapshot|undefined;const current=s&&s.url===t.url?s:null;V(current);G(current?.product||null);const intent=d['fit-editor:'+t.id] as {kind:string;url:string;id:string}|undefined;FitIntent(intent&&current&&productIdentity(intent.url)===productIdentity(current.url)?intent:null);};
-  const changed=(changes:Record<string,chrome.storage.StorageChange>,area:string)=>{if(area==='local'&&changes.formaEnabled){Enabled(changes.formaEnabled.newValue!==false);if(changes.formaEnabled.newValue===false)extraction.current?.abort();}if(area==='session')refresh();if(area==='local'&&changes.feedback)FitFeedback(Array.isArray(changes.feedback.newValue)?changes.feedback.newValue:[]);if(area==='local'&&changes.goodFits)GoodFits(Array.isArray(changes.goodFits.newValue)?changes.goodFits.newValue:[]);if(area==='local'&&changes.aiCount)Count(Number(changes.aiCount.newValue||0));if(area==='local'&&changes.settings){const value=requestLimit(changes.settings.newValue);Limit(value);LimitDraft(String(value));Unlimited(hasNoRequestCap(changes.settings.newValue));UnlimitedDraft(hasNoRequestCap(changes.settings.newValue));}};const updated=()=>{V(null);G(null);refresh();};const tabUpdated=(_id:number,change:chrome.tabs.OnUpdatedInfo)=>{if(change.url||change.status==='complete')refresh();};
-  refresh();chrome.storage.onChanged.addListener(changed);chrome.tabs.onActivated.addListener(updated);chrome.tabs.onUpdated.addListener(tabUpdated);
-  return()=>{revision++;chrome.storage.onChanged.removeListener(changed);chrome.tabs.onActivated.removeListener(updated);chrome.tabs.onUpdated.removeListener(tabUpdated);};
- },[]);
- const effectiveProfile=withEstimates(profile);
- const result=product?recommend(effectiveProfile,product):null;
- const skipped=!!snapshot&&!snapshot.manual&&!!snapshot.detection&&snapshot.detection.kind!=='clothing';
- const idle=enabled?idlePageStatus(connection,snapshot?.scan,snapshot?.assessment,now):{title:'FORMA is off',text:'Turn FORMA on in the header when you want a new assessment.'};
- const assessing=enabled&&snapshot?.assessment?.status==='running'&&!!snapshot.assessment.startedAt&&now-snapshot.assessment.startedAt<=45000;
- const analysed=snapshot?.assessment?.status==='ready'||mode==='none'&&!!snapshot?.product;
- const savedGoodFit=snapshot?goodFits.find(e=>productIdentity(e.url)===productIdentity(snapshot.url)):undefined;
- function saveDescription(value:string){
-  const job=notesWrites.current.catch(()=>{}).then(()=>store.set('description',value)).then(()=>{D(value);DP(null);});
-  notesWrites.current=job;return job;
- }
- async function applyNotes(){
-  await notesWrites.current;
-  if(!extension||!tab||!snapshot)throw Error('Notes are saved. Open a product to assess its fit.');
-  const response=await chrome.tabs.sendMessage(tab,{type:'refresh',reassess:true});if(!response?.accepted)throw Error('Reload the shop page to reconnect FORMA.');
-  N('Saved notes applied to this product. Unchanged assessments reuse the cache.');S('shop');
- }
- async function editFeedback(entry:Feedback,original:Feedback){
-  const saved:Feedback[]=await store.get('feedback')||[];
-  const next=[entry,...saved.filter(f=>!((f.url?productIdentity(f.url):f.name)===(original.url?productIdentity(original.url):original.name)&&f.size===original.size))].slice(0,100);
-  await store.set('feedback',next);FitFeedback(next);
- }
- async function saveFitFeedback(details:FitDetails){
-  if(!snapshot||!details.size||(!details.note&&!details.issue))throw Error('Add your worn size and a note or quick label.');
-  const feedback=await store.get('feedback')||[];
-  await store.set('feedback',[{name:snapshot.name,url:snapshot.url,size:details.size,value:details.issue||'Fit note',note:details.note},...feedback].slice(0,100));
-  N('Feedback saved. Your size and full note will be used in assessments of this item.');
-  FitIntent(null);if(extension&&tab)await chrome.storage.session.remove('fit-editor:'+tab);
- }
- async function openFeedback(){if(snapshot){const intent={kind:'bad',url:snapshot.url,id:crypto.randomUUID()};if(extension&&tab)await chrome.storage.session.set({['fit-editor:'+tab]:intent});FitIntent(intent);}}
- async function updateGoodFit(entry:GoodFit){if(extension){const response=await chrome.runtime.sendMessage({type:'save-good-fit',entry});if(response.error)throw Error(response.error);GoodFits(response.goodFits);return;}const [saved,scans]=await Promise.all([store.get('goodFits'),store.get('scanLibrary')]);const enriched=enrichGoodFits([entry],Array.isArray(scans)?scans:[])[0];const next=saveGoodFit(Array.isArray(saved)?saved:[],enriched);await store.set('goodFits',next);GoodFits(next);}
- async function removeGoodFit(url:string){if(extension){const response=await chrome.runtime.sendMessage({type:'remove-good-fit',url});if(response.error)throw Error(response.error);GoodFits(response.goodFits);return;}const saved=await store.get('goodFits');const next=(Array.isArray(saved)?saved:[]).filter((e:GoodFit)=>productIdentity(e.url)!==productIdentity(url));await store.set('goodFits',next);GoodFits(next);}
- async function bookmarkGoodFit(){
-  if(!snapshot?.name)throw Error('Read a product page first.');
-  await updateGoodFit({evidence:snapshot.evidence,url:snapshot.url,name:snapshot.name,category:product?.category||snapshot.detection?.category||null,product,charts:snapshot.charts,images:snapshot.images,description:snapshot.text.slice(0,1500),size:'',reason:'',savedAt:Date.now()});
-  N('Saved as a good fit. Add your worn size or a reason below if you like.');
- }
- async function showPopup(){
-  if(!extension||!tab||!snapshot)throw Error('Open a product page first.');
-  const assessment=snapshot.assessment,review=assessment?.review;
-  const result=review?{message:review.summary,reasons:review.reasons,model:assessment?.model,basis:review.basis,cached:true,status:assessment?.status,overallFit:review.overallFit,size:review.size,scores:review.ranked?.map(s=>({size:s.size,overall:s.overall,eligible:s.eligible,reason:s.reason}))}:snapshot.result;
-  if(!result)throw Error('There is no completed result to show yet.');
-  try{const response=await chrome.tabs.sendMessage(tab,{type:'show-result',url:snapshot.url,result});if(!response?.shown)throw Error();N('Showing the saved result. No new AI request.');}catch{throw Error('The page reader is disconnected. Reload the shop page to reconnect it.');}
- }
- async function readPage(t:Pick<chrome.tabs.Tab,'id'|'url'>,options:{force?:boolean;retry?:boolean;fresh?:boolean}={}){
-  if(!connectPage)return;ConnectionState({status:'checking',message:'Connecting to this page…',at:Date.now()});
-  const state=await connectPage(t,options);ConnectionState(state);if(state.status!=='connected')throw Error(state.message);
- }
- async function registerShop(origins:string[],all:boolean,t?:chrome.tabs.Tab,force=false){
-  const id=all?'all-shops':'shop-'+new URL(t!.url!).hostname.replace(/[^a-z0-9]/gi,'-');
-  if(all){const scripts=await chrome.scripting.getRegisteredContentScripts();if(scripts.length)await chrome.scripting.unregisterContentScripts({ids:scripts.map(s=>s.id)});}
-  else await chrome.scripting.unregisterContentScripts({ids:[id]}).catch(()=>{});
-  await chrome.scripting.registerContentScripts([{id,matches:origins,js:['content.js'],runAt:'document_idle'}]);
-  if(t?.id&&/^https?:/.test(t.url||'')){
-   await readPage(t,{retry:force,force});
-  }
- }
- async function startSetup(){
-  if(!extension)throw Error('Load FORMA as a Chrome extension first.');
-  if(!key.trim())throw Error('Enter your Anthropic API key to start.');
-  SetupBusy(true);try{
-   const origins=['https://*/*','http://*/*'];
-   if(!await chrome.permissions.request({origins}))return;
-   const settings=await store.get('settings');
-   await chrome.storage.session.set({key:key.trim()});
-   await chrome.storage.local.set({apiKey:key.trim(),settings:{...settings,mode:'anthropic',model:'claude-haiku-5-5',assessmentVersion:1,limit:requestLimit(settings),limitVersion:1}});
-   M('anthropic');Model('claude-haiku-5-5');
-   const [active]=await chrome.tabs.query({active:true,currentWindow:true});
-   await registerShop(origins,true,active);SetupNeeded(false);
-   N('AI is ready. Clothing pages are detected locally as you browse.');
-  }finally{SetupBusy(false);}
- }
- async function enableShop(all=false,force=false){
-  if(!extension)throw Error('Load FORMA as a Chrome extension first.');
-  const [t]=await chrome.tabs.query({active:true,currentWindow:true});if(!t?.id)throw Error('No active tab found.');if(!t.url)throw Error('Chrome has not granted tab access yet. Reload FORMA in chrome://extensions and approve its updated permission.');if(!/^https?:/.test(t.url))throw Error('This Chrome page cannot be read. Switch to a shop tab.');
-  const origins=all?['https://*/*','http://*/*']:[new URL(t.url).origin+'/*'];
-  const permissions=mode==='anthropic'&&key.trim()?[...origins,'https://api.anthropic.com/*']:origins;
-  if(!await chrome.permissions.request({origins:permissions}))return;
-  if(mode==='anthropic'&&key.trim()){
-   if((await store.get('apiKey'))!==key.trim())await store.set('apiKey',key.trim());
-   SetupNeeded(false);
-  }
-  await registerShop(origins,all,t,force);N(force?'Manual analysis activated for this page.':'Connected. FORMA detects clothing pages locally and assesses fit automatically.');
- }
- async function rescan(){if(!extension)return;const [t]=await chrome.tabs.query({active:true,currentWindow:true});await readPage(t||{},{retry:true,fresh:true});}
- async function saveBudget(add=false){
-  BudgetBusy(true);try{
-   const [settings,used]=await Promise.all([store.get('settings'),store.get('aiCount')]);
-   const next=add?additionalRequests(requestLimit(settings),Number(used||0)):unlimitedDraft?requestLimit(settings):Number(limitDraft);
-   if(!add&&!unlimitedDraft&&!limitDraft.trim()||!Number.isSafeInteger(next)||next<0)throw Error('Enter a whole number of requests, zero or higher.');
-   const uncapped=add?false:unlimitedDraft;
-   await store.set('settings',{...settings,limit:next,limitVersion:1,unlimited:uncapped});Limit(next);LimitDraft(String(next));Unlimited(uncapped);UnlimitedDraft(uncapped);N(uncapped?'No request cap. Usage is still counted.':`Request limit saved: ${next}.`);
-  }finally{BudgetBusy(false);}
- }
- async function useProduct(p:Product){G(p);if(snapshot){const products=await store.get('products')||{};products[snapshot.url]={product:p,fingerprint:JSON.stringify([snapshot.name,snapshot.charts])};await store.set('products',products);await rescan();}}
- async function analyse(){
-  if(!enabled)throw Error('FORMA is off. Turn it on in the header to analyse.');
-  if(!extension||mode==='none')throw Error('Choose an optional AI connection in settings first.');
-  const text=table||snapshot?.text;if(!text)throw Error('No product text available yet.');
-  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('v2|'+mode+'|'+model+'|'+text)))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  const cache=await store.get('aiCache')||{};if(cache[digest]){G(cache[digest]);N('Cached analysis. No AI request. Check it below before using it.');return;}
-  if(mode==='anthropic'&&!key.trim())throw Error('Add your API key in Settings first.');
-  if(!await chrome.permissions.contains({origins:[mode==='ollama'?'http://localhost:11434/*':'https://api.anthropic.com/*']}))throw Error('Allow the AI connection in Settings first.');
-  Busy(true);try{const budget=await chrome.runtime.sendMessage({type:'reserve-ai-request'});if(!budget?.allowed)throw Error(budget?.error||'Your AI request allowance is used up. Add 100 more requests in Settings.');await chrome.storage.session.set({key});const controller=new AbortController();extraction.current=controller;const p=await extract(text,mode,model,key,controller.signal);cache[digest]=p;await store.set('aiCache',Object.fromEntries(Object.entries(cache).slice(-40)));G(p);N('AI chart ready. Review the extracted values before saving it for this page.');}finally{Busy(false);}
- }
- function updateMeasure(k:Key,value:string){P({...profile,measures:{...profile.measures,[k]:value?{value:+value,uncertainty:1,estimated:false,locked:false}:undefined}});}
- async function toggleEnabled(){PowerBusy(true);const next=!enabled;try{await store.set('formaEnabled',next);Enabled(next);if(!next)extraction.current?.abort();N('');}catch{N('Could not save the switch. Please try again.');}finally{PowerBusy(false);}}
- return <><header><div className="wordmark" aria-label="FORMA">forma<span className="brand-dot" aria-hidden="true">.</span></div><button className="power-switch" role="switch" aria-label="FORMA enabled" aria-checked={enabled} disabled={!ready||powerBusy} onClick={toggleEnabled}><span>{enabled?'On':'Off'}</span><span className="switch-track" aria-hidden="true"><span/></span></button><button className="theme" onClick={()=>Dark(!dark)} aria-label="Toggle colour theme">{dark?'☀':'◐'}</button></header>
- <div className="shell"><aside><p className="eyebrow">MADE FOR YOUR SHAPE.</p><nav>{[['shop','01','Your fit'],['profile','02','Your profile'],['settings','03','Settings']].map(([s,n,t])=><button key={s} onClick={()=>S(s)} aria-current={s===step?'step':undefined}><span>{n}</span>{t}</button>)}</nav><p className="small rail">Explainable fit.<br/>For every gender.</p></aside><main>
- {notice&&<div className="notice" role="status">{notice}</div>}
- {!enabled&&<div className="notice" role="status"><strong>FORMA is off</strong><br/>No new AI requests. Your profile and saved results are kept.</div>}
- {enabled&&ready&&setupNeeded&&mode==='anthropic'&&step==='shop'&&<section><div className="bar">GET STARTED</div><h2>Your fit, with AI.</h2><p>Claude Haiku 5.5 is already selected. Add your key once to start automatic fit assessments.</p><label>Anthropic API key<input type="password" autoComplete="off" value={key} onChange={e=>K(e.target.value)}/></label><p className="small">Remembered on this device. Page detection is local and uses no tokens. AI receives product details and your saved fit profile only for detected clothing pages or pages you activate manually.</p><button className="primary" disabled={setupBusy||!key.trim()} onClick={run(startSetup)}>{setupBusy?'Setting up…':'Enable AI & automatic detection'}</button><p className="small">Chrome will ask for website access. Start with 100 requests; adjust or remove the cap in Settings.</p><button onClick={()=>S('profile')}>Set up my fit profile</button></section>}
- {step==='shop'&&<section><div className="bar">01 / YOUR FIT, AUTOMATICALLY</div><h1>{snapshot?.name||'Browse. Find your fit.'}</h1><p className="muted">{!enabled?'FORMA is paused. Your saved assessment remains available.':snapshot?.manual?'Manual analysis is active for this page.':snapshot?.detection?.kind==='clothing'?'Clothing product detected locally. FORMA checks its sizing and assesses your fit.':'Product detection uses no AI. If a clothing page is missed, activate it below.'}</p>
- <div className="actions"><button className={analysed?undefined:"primary"} disabled={!enabled||busy||assessing||analysed} onClick={run(async()=>{Busy(true);try{await enableShop(false,true);}finally{Busy(false);}})}>{analysed?'✓ Analysed':busy||assessing?'Analysing…':'Analyse this page'}</button><button disabled={!enabled||busy||assessing} onClick={run(rescan)}>Refresh</button></div>
- {analysed&&<button disabled={!enabled} onClick={run(showPopup)}>Show popup</button>}
- {analysed&&(connection.status==='error'||snapshot?.scan)&&<p className="small" role="status">{snapshot?.scan?.status==='reading'?'Checking the page. Showing your last completed assessment.':'The page connection was interrupted. Showing your last completed assessment; use Refresh to reconnect.'}</p>}
- {mode!=='none'?<><div className="verdict"><span className="eyebrow">{skipped?'LOCAL DETECTION · NO AI USED':!snapshot?.assessment?'PAGE CONNECTION':snapshot?.assessment?.status==='ready'?(snapshot.assessment.cached?'AI ASSESSMENT · CACHED':'AI ASSESSMENT · COMPLETED'):'AI ASSESSMENT'}</span><h2>{skipped?'No clothing product detected':snapshot?.assessment?.review?.size?(snapshot.assessment.review.basis==='tried'?'Your recorded fit: ':snapshot.assessment.review.basis==='estimate'?'Estimated size: ':'Suggested size: ')+snapshot.assessment.review.size:snapshot?.assessment?.status==='ready'?(snapshot.assessment.review?.ranked?.some(s=>s.overall!==null)?'No suitable size':'No reliable size yet'):idle.title}</h2>{snapshot?.assessment?.review&&<div className="fit-score"><span className="eyebrow">Overall fit</span><p className="small">Cut &amp; proportions · independent of size</p><strong>{overallScore(snapshot.assessment.review)}</strong><p className="small">{overallFit(snapshot.assessment.review).reason}</p></div>}{snapshot?.assessment?.review?<details><summary>Fit summary</summary><p>{snapshot.assessment.review.summary}</p></details>:<p>{skipped?snapshot.reason:idle.text}</p>}{!skipped&&<p className="small">{snapshot?.assessment?.model||model}</p>}{snapshot?.assessment?.status==='ready'&&<p className="small">{mode==='anthropic'&&(snapshot.assessment.review?.imageCount??snapshot.images?.length)?`${snapshot.assessment.review?.imageCount??snapshot.images?.length} product image(s) included in this assessment.`:'No product photos assessed. Visual cut and hem details may be unknown.'}</p>}</div>{snapshot?.assessment?.review&&<details><summary>Why this fit?</summary><ul>{snapshot.assessment.review.reasons.map((r,i)=><li key={i}>{r}</li>)}</ul>{snapshot.assessment.review.limitations.map((r,i)=><p className="small" key={i}>{r}</p>)}</details>}<p className="small">AI can estimate a size from your height, weight, fit preferences and the product chart. Width, length and sleeve uncertainty are assessed separately. Known measurements improve the comparison; they are optional.</p>{snapshot&&<button onClick={run(openFeedback)}>Add fit feedback</button>}</>:result?<><div className="verdict"><span className="eyebrow">DATA QUALITY: {result.quality.toUpperCase()}</span><h2>{result.message}</h2><p>{profile.mode==='reference'?'Compared with '+profile.name:'Based on your measured or estimated dimensions and preferred fit.'}</p></div>
- {result.ranked.slice(0,3).map((r,i)=><article className="size-card" key={r.label}><div className="row"><strong className="size">{r.label}</strong><span>{i===0?'Closest candidate':'Alternative'}{!r.available?' · sold out':''}</span></div>{r.details.map(d=><div className="fact" key={d.key}><span>{labels[d.key]}</span><span className={d.bad?'warn':''}>{d.text} · {d.delta>0?'+':''}{d.delta.toFixed(1)} cm{d.uncertain?' *':''}</span></div>)}</article>)}
- {!!result.missing.length&&<p className="notice">Not enough data for: {result.missing.map(k=>labels[k]).join(', ')}.</p>}
- {!result.ranked.length&&<><p>Height and weight alone cannot determine chest fit or sleeve length. One reliable measurement or a favourite garment helps FORMA make this comparison.</p><button onClick={()=>S('profile')}>Improve my profile</button></>}
- <p className="small">* Your estimate could change this result. Width differences refer to circumferences. Fabric drape, stretch and dropped shoulders are not simulated.</p>
- <details><summary>Source & extracted measurements</summary><p className="small">{product!.source}</p><pre>{JSON.stringify(product,null,2)}</pre><button onClick={run(()=>useProduct(product!))}>Use these values for this page</button></details>
- {snapshot&&<button onClick={run(openFeedback)}>Add fit feedback</button>}
- </>:<div className="card"><span className="eyebrow">WAITING FOR THE SIZE GUIDE</span><p>{snapshot?.reason||'Open a product page. FORMA checks its sizing tabs and reads supported tables automatically.'}</p><p className="small">No AI calls or tokens for normal charts. If units or measurement types are unclear, FORMA will say so.</p></div>}
- {snapshot?.charts.length? <details className="card"><summary>Size guide read · {snapshot.charts.length} table(s)</summary>{snapshot.charts.map((chart,i)=><div key={i}><p className="small">{measurementTable(chart)?.subject==='body'?'Body-size reference measurements read from the shop; these are not garment dimensions.':sizeConversion(chart.text)?'Size-label mappings read from the shop. Numbers in EU / UK / US columns are sizes, not centimetres.':'Table read from the shop. Only clearly labelled measurements are compared.'}</p><div style={{overflowX:'auto'}}><table><tbody>{chart.text.split('\n').map((row,j)=><tr key={j}>{row.split(';').map((cell,k)=>j===0?<th key={k}>{cell}</th>:<td key={k}>{cell}</td>)}</tr>)}</tbody></table></div></div>)}</details>:null}
- <p className="small">Refresh rereads the size guide and requests a fresh AI assessment. Automatic checks reuse cached results.</p>
- {fitIntent&&snapshot&&<section id="popup-fit-editor"><div className="actions"><h2>Your fit feedback</h2><button aria-label="Close fit details" onClick={run(async()=>{FitIntent(null);if(extension&&tab)await chrome.storage.session.remove('fit-editor:'+tab);})}>×</button></div><p className="eyebrow">{fitIntent.kind==='good'?'SAVED GOOD FIT':'YOUR EXPERIENCE'}</p>{fitIntent.kind==='good'?(savedGoodFit&&<GoodFitEditor entry={savedGoodFit} save={updateGoodFit} remove={()=>removeGoodFit(savedGoodFit.url)}/>):<FitDetailsForm key={fitIntent.id} initial={{size:'',note:'',issue:''}} sizeRequired allowIssues save={saveFitFeedback}/>}</section>}
- {snapshot?.name&&!skipped&&<div className="good-fit"><button disabled={!!savedGoodFit} onClick={run(bookmarkGoodFit)}>{savedGoodFit?'✓ Saved as a good fit':'☆ Save as a good fit'}</button>{savedGoodFit&&<details><summary>Your good fit · optional details</summary><GoodFitEditor entry={{...savedGoodFit,product:savedGoodFit.product||product,category:savedGoodFit.category||product?.category||null}} save={updateGoodFit} remove={()=>removeGoodFit(savedGoodFit.url)}/></details>}</div>}
- {mode!=='none'&&!unlimited&&(count>=limit||snapshot?.assessment?.code==='request_limit')&&<div className="notice"><p><strong>{count} / {limit} AI requests used</strong></p><p className="small">This counter includes failed attempts and stays saved between sessions. Cached results use no requests.</p><button className="primary" disabled={budgetBusy} onClick={run(()=>saveBudget(true))}>{budgetBusy?'Saving…':'Allow 100 more requests'}</button><button onClick={()=>S('settings')}>Edit limit</button></div>}
- {mode!=='none'&&!!snapshot?.assessment?.review?.ranked?.length&&<FitComparison scores={snapshot.assessment.review.ranked}/>}
- <details><summary>Chart not detected? Advanced fallback</summary><p className="small">Usually automatic. Use this only for an unusual chart, or ask optional AI to read product text.</p>
- <label>Table<textarea rows={6} value={table} onChange={e=>T(e.target.value)} placeholder={'Size;Chest;Sleeve;Length\nM;57;64;68'}/></label>
- <div className="grid"><label>Category<select value={category} onChange={e=>C(e.target.value as Category)}>{Object.entries(categories).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label><label>Measurements describe<select value={type} onChange={e=>{Y(e.target.value as 'body'|'garment');F(false);}}><option value="body">The body</option><option value="garment">The garment</option></select></label><label>Units<select value={unit} onChange={e=>U(e.target.value as 'cm'|'in')}><option value="cm">Centimetres</option><option value="in">Inches</option></select></label><label>Circumferences<select disabled={type==='body'} value={flat?'flat':'full'} onChange={e=>F(e.target.value==='flat')}><option value="full">Full circumference</option><option value="flat">Half-width, laid flat</option></select></label></div>
- <button onClick={run(()=>useProduct(parseTable(table,{name:snapshot?.name||'Manual comparison',category,measurementType:type,unit,flat,source:snapshot?.url||'Manual chart'})))}>Compare locally</button>{mode!=='none'&&<button disabled={!enabled||busy} onClick={run(analyse)}>{busy?'Reading…':'Read with AI'}</button>}
- </details></section>}
- {step==='profile'&&<section><div className="bar">02 / YOUR PROFILE</div><h1>Your profile.</h1><ProfileBasics profile={profile} save={async value=>{const next=withEstimates(value);await store.set('profile',next);profileLoaded.current=JSON.stringify(next);P(next);}}/> <details><summary>Optional: improve accuracy with known measurements</summary><p className="small">Missing body dimensions are filled with broad starting estimates from height and weight. These unvalidated heuristics cannot describe your exact proportions. Preferred garment length is optional and depends on the garment type; it is not inferred from height. AI uses these estimates as uncertain starting ranges. Your measured values and actual fit experience take priority.</p>
- <p className="small">Auto updates an estimate when your height or weight changes. Fixed keeps that value unchanged. Both are used in AI assessments with their uncertainty.</p><div className="grid"><label>Compare using<select value={profile.mode} onChange={e=>P({...profile,mode:e.target.value as Profile['mode'],measures:{}})}><option value="body">Body measurements</option><option value="reference">A favourite garment</option></select></label><label>Category<select value={profile.category} onChange={e=>P({...profile,category:e.target.value as Category,measures:{}})}>{Object.entries(categories).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label></div>
- {keys[profile.category].map(k=><div className="measure" key={k}><label>{labels[k]}<div className="input-unit"><input type="number" min="1" max="300" step=".5" placeholder="Unknown" disabled={effectiveProfile.measures[k]?.locked} value={effectiveProfile.measures[k]?.value??''} onChange={e=>updateMeasure(k,e.target.value)}/><span>cm</span></div></label><label>Source<select value={effectiveProfile.measures[k]?.uncertainty??1} onChange={e=>{if(effectiveProfile.measures[k])P({...profile,measures:{...profile.measures,[k]:{...effectiveProfile.measures[k]!,uncertainty:+e.target.value,estimated:false}}});}}>{effectiveProfile.measures[k]?.estimated&&<option value={effectiveProfile.measures[k]?.uncertainty}>Estimated ±{effectiveProfile.measures[k]?.uncertainty} cm</option>}<option value="1">Measured ±1 cm</option><option value="4">Estimated ±4 cm</option></select></label><button title="Keep this value fixed when height or weight changes. It remains available to AI either way." aria-label={'Keep '+labels[k]+' fixed'} aria-pressed={!!effectiveProfile.measures[k]?.locked} disabled={!effectiveProfile.measures[k]} onClick={()=>P({...profile,measures:{...profile.measures,[k]:{...effectiveProfile.measures[k]!,locked:!effectiveProfile.measures[k]?.locked}}})}>{effectiveProfile.measures[k]?.locked?'Fixed':'Auto'}</button></div>)}
- </details>
-<h2>Fit preferences</h2><p className="muted">What feels right, what bothers you, and how you like your clothes to sit.</p><ProfileNotes draft={notesDraft} Draft={NotesDraft} saved={description} ready={ready} save={saveDescription} apply={applyNotes} canApply={!!snapshot}/><details><summary>Optional: fill basic profile fields</summary><p className="small">Recognise height, weight and size labels locally. This is optional; the AI already receives your complete saved notes.</p><button onClick={()=>DP(understand(description))}>Find basic details</button>
- {draft&&<div className="card"><h2>Here's what I understood</h2><p>{[draft.height?draft.height+' cm':null,draft.weight?draft.weight+' kg':null,draft.waistLabel,draft.shoeSizeEU?'Shoe size EU '+draft.shoeSizeEU:null,draft.fit,draft.style,...draft.concerns].filter(Boolean).join(' · ')||'No supported details found yet.'}</p><p className="small">Simple details are recognised locally. Check before saving. Size labels are never treated as measured circumferences.</p><button onClick={run(async()=>{P(withEstimates({...profile,fit:draft.fit as Profile['fit']||profile.fit,context:{...profile.context,height:draft.height??profile.context?.height??0,weight:draft.weight??profile.context?.weight??0,waistLabel:draft.waistLabel||profile.context?.waistLabel||'',shoeSizeEU:draft.shoeSizeEU||profile.context?.shoeSizeEU||'',style:draft.style||profile.context?.style||'',concerns:Array.from(new Set([...(profile.context?.concerns||[]),...draft.concerns]))}}));await notesWrites.current;DP(null);N('Basic profile details saved. Your full notes are kept.');})}>Save these details</button></div>}</details>
- <div className="card"><h2>Your good fits</h2><p className="small">Save clothes you already like from their product pages. FORMA uses relevant examples and your reasons in future assessments.</p>{goodFits.length?goodFits.map(entry=><details key={productIdentity(entry.url)}><summary>{entry.name}{entry.size?' · '+entry.size:''}</summary><a href={entry.url} target="_blank" rel="noreferrer">Open product page</a><GoodFitEditor entry={entry} save={updateGoodFit} remove={()=>removeGoodFit(entry.url)}/></details>):<p className="small">No saved examples yet. Use “Save as a good fit” while viewing an item you own and like.</p>}</div>
- <div className="card"><h2>Your fit feedback</h2><p className="small">Edit notes or correct an earlier fit report. Updates replace that size's previous report.</p>{fitFeedback.length?fitFeedback.map((entry,i)=><details key={(entry.url||entry.name)+entry.size+i}><summary>{entry.name} · {entry.size} · {entry.value}</summary><FitDetailsForm initial={{size:entry.size,note:entry.note||'',issue:entry.value==='Fit note'?'':entry.value}} sizeRequired allowIssues save={({size,note,issue})=>editFeedback({...entry,size,note,value:issue||'Fit note'},entry)}/></details>):<p className="small">No product feedback saved yet.</p>}</div>
- <div className="actions"><span className="small">{ready?'Saved on this device':'Loading…'}</span><button className="primary" onClick={()=>S('shop')}>Back to shopping →</button></div></section>}
- {step==='settings'&&<section><div className="bar">03 / SETTINGS</div><h1>Your analysis.</h1><p>AI assesses product fit by default, including charts already read locally. Up to two product photos help assess cut and hem construction when available. Identical product/profile assessments are cached. Changing the profile or feedback can require a new assessment. You can explicitly choose local-only mode.</p>
- <button disabled={autoBusy||autoEnabled} onClick={activateAutomatic}>{autoBusy?'Enabling automatic detection…':autoEnabled?'✓ Automatic detection is active':'Enable automatic detection on all shops'}</button><p className="small" role="status">{autoMessage||(autoEnabled?'Active on ordinary web pages. Chrome settings pages cannot be analysed.':'Not enabled for all shops yet.')}</p><p className="small">Grants access to ordinary web pages. You can manage or revoke access in Chrome's extension settings.</p>
- <label>Fit assessment<select value={mode} onChange={e=>{M(e.target.value);Model(e.target.value==='anthropic'?'claude-haiku-5-5':'');}}><option value="none">No AI · free local comparison</option><option value="ollama">Ollama · this computer</option><option value="anthropic">Anthropic · my API key</option></select></label>
- {mode!=='none'&&<>{mode==='anthropic'?<p className="badge">Claude Haiku 5.5 · default</p>:<label>Installed Ollama model<input value={model} onChange={e=>Model(e.target.value)}/></label>}{mode==='anthropic'&&<label>API key · remembered on this device<input type="password" autoComplete="off" value={key} onChange={e=>K(e.target.value)} onBlur={()=>{if(extension){chrome.storage.session.set({key});chrome.storage.local.set({apiKey:key});}}}/></label>}{mode==='anthropic'&&<><p className="small">Stored in this extension on this device, not in profile exports. Browser storage is not an encrypted password vault.</p><button onClick={run(async()=>{K('');SetupNeeded(true);await chrome.storage.local.remove('apiKey');await chrome.storage.session.remove('key');N('API key removed from this device.');})}>Forget API key</button></>}<label>Request cap<select value={unlimitedDraft?'unlimited':'limited'} onChange={e=>UnlimitedDraft(e.target.value==='unlimited')}><option value="limited">Limit total requests</option><option value="unlimited">No request cap</option></select></label><label>Total AI request limit<input type="number" min="0" step="1" disabled={unlimitedDraft} value={limitDraft} onChange={e=>LimitDraft(e.target.value)}/></label><div className="actions"><button disabled={budgetBusy||limitDraft===String(limit)&&unlimitedDraft===unlimited} onClick={run(()=>saveBudget())}>Save limit</button><button disabled={budgetBusy} onClick={run(()=>saveBudget(true))}>Allow 100 more requests</button></div><p><strong>{unlimited?`${count} used · No request cap`:`${count} / ${limit} used · ${Math.max(0,limit-count)} remaining`}</strong></p><p className="small">Default: 100 requests. You can remove the cap above. Usage stays saved and includes failed attempts. Cached results do not count.</p><p className="small"> Cloud requests may incur charges. Product details, a limited sanitised HTML excerpt when parsing fails, up to two product photos (Anthropic), your saved fit description, relevant saved good fits, known measurements/preferences and matching fit feedback are sent to your selected AI provider.</p><button onClick={run(async()=>{if(!extension)throw Error('Open as a Chrome extension.');if(await chrome.permissions.request({origins:[mode==='ollama'?'http://localhost:11434/*':'https://api.anthropic.com/*']})){SetupNeeded(false);N('Connection allowed.');if(tab)await chrome.tabs.sendMessage(tab,{type:'refresh'}).catch(()=>{});}})}>Allow connection</button></>}
- <details><summary>Move your profile to another computer</summary><button onClick={()=>{const url=URL.createObjectURL(new Blob([JSON.stringify({...profile,fitDescription:description})],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='forma-profile.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}>Export profile</button><label>Import profile<input type="file" accept="application/json" onChange={e=>{const file=e.target.files?.[0];if(file)run(async()=>{const imported=JSON.parse(await file.text());if(imported.kind==='forma-profile-update'){const next=applyProfileUpdate(profile,imported);const feedback=profileFeedbackUpdate(imported,await store.get('feedback')||[]);if(imported.fitNotes&&!description.includes(imported.fitNotes)){const merged=[description.trim(),imported.fitNotes.trim()].filter(Boolean).join('\n\n');if(merged.length>6000)throw Error('Your notes would exceed 6000 characters. Edit saved notes first.');await saveDescription(merged);}await store.set('feedback',feedback);FitFeedback(feedback);await store.set('profile',next);profileLoaded.current=JSON.stringify(next);P(next);N('Profile updated. Your existing measurements, notes and saved fits are kept.');return;}const {fitDescription,...p}=imported;if(fitDescription!==undefined&&(typeof fitDescription!=='string'||fitDescription.length>6000))throw Error('Invalid fit notes.');if(!['body','reference'].includes(p.mode)||!keys[p.category as Category]||!p.measures||typeof p.name!=='string'||!['close','regular','relaxed','oversized'].includes(p.fit))throw Error('Invalid profile.');for(const [k,v]of Object.entries(p.measures)as [string,{value:number;uncertainty:number}][])if(!(k in labels)||!Number.isFinite(v.value)||v.value<=0||v.value>300||!Number.isFinite(v.uncertainty)||v.uncertainty<0||v.uncertainty>30)throw Error('Invalid measurement.');if(p.context&&(!Array.isArray(p.context.concerns)||p.context.concerns.some((s:unknown)=>typeof s!=='string')||typeof p.context.style!=='string'||(p.context.bodyShape!==undefined&&(typeof p.context.bodyShape!=='string'||p.context.bodyShape.length>1000))))throw Error('Invalid profile context.');P(p);if(typeof fitDescription==='string')await saveDescription(fitDescription);N('Profile imported.');})();}}/></label></details>
- </section>}
- </main></div><footer><span>FORMA · FIT WITH REASONS</span><span>STORED LOCALLY</span></footer></>;
+import React, { useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { applyProfileUpdate, profileFeedbackUpdate } from './profile-update';
+import { consolidateFitNotes, migrateProfile } from './profile-migration';
+import { DEFAULT_REQUEST_LIMIT, requestLimit, additionalRequests, hasNoRequestCap } from './request-budget';
+import { createPageConnector, type Connection } from './page-connection';
+import { automaticDetectionEnabled, enableAutomaticDetection } from './automatic-detection';
+import { FitDetailsForm, type FitDetails } from './fit-details-form';
+import { ProfileNotes } from './profile-notes';
+import { productIdentity } from './core/identity';
+import { providerOf, type Mode } from './core/settings';
+import { guessKind, KIND_LABELS } from './core/garment';
+import { DEFAULT_MODEL, MODELS } from './assess/reader';
+import { DEFAULT_PROFILE, normaliseFeedback, normaliseGoodFits } from './assess/person';
+import { ListingInfo, Verdict } from './ui/verdict';
+import { ProfileEditor } from './ui/profile';
+import type { Feedback, GoodFit, PageState, Profile } from './core/types';
+
+const extension = typeof chrome !== 'undefined' && !!chrome.storage;
+const connectPage = extension ? createPageConnector() : null;
+const ALL_SITES = ['https://*/*', 'http://*/*'];
+const ANSWER_MS = 110_000;
+
+const store = {
+  async get(key: string): Promise<any> { return extension ? (await chrome.storage.local.get(key))[key] : JSON.parse(localStorage.getItem(key) || 'null'); },
+  async set(key: string, value: unknown) { if (extension) await chrome.storage.local.set({ [key]: value }); else localStorage.setItem(key, JSON.stringify(value)); },
+};
+
+/** 1.x profiles carried automatic estimates; FORMA 2 only keeps measured values. */
+function cleanProfile(raw: any): Profile {
+  const p = migrateProfile({ ...DEFAULT_PROFILE, ...(raw || {}) });
+  const measures = Object.fromEntries(Object.entries(p.measures || {}).filter(([, m]) => m && !m.estimated));
+  return { ...p, measures, context: { ...DEFAULT_PROFILE.context!, ...p.context } };
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+
+type Intent = { kind: 'good' | 'bad'; url: string; id: string };
+
+function App() {
+  const [step, setStep] = useState<'fit' | 'profile' | 'settings'>('fit');
+  const [ready, setReady] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [dark, setDark] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<number>();
+  const [tabUrl, setTabUrl] = useState('');
+  const [page, setPage] = useState<PageState | null>(null);
+  const [connection, setConnection] = useState<Connection>({ status: 'checking', message: 'Connecting to this page…', at: Date.now() });
+  const [now, setNow] = useState(Date.now());
+  const [profile, setProfile] = useState<Profile>(DEFAULT_PROFILE);
+  const [notes, setNotes] = useState('');
+  const [notesDraft, setNotesDraft] = useState('');
+  const [goodFits, setGoodFits] = useState<GoodFit[]>([]);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [mode, setMode] = useState<Mode>('anthropic');
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [key, setKey] = useState('');
+  const [count, setCount] = useState(0);
+  const [limit, setLimit] = useState(DEFAULT_REQUEST_LIMIT);
+  const [unlimited, setUnlimited] = useState(false);
+  const [limitDraft, setLimitDraft] = useState(String(DEFAULT_REQUEST_LIMIT));
+  const [unlimitedDraft, setUnlimitedDraft] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [intent, setIntent] = useState<Intent | null>(null);
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoMessage, setAutoMessage] = useState('');
+  const [apiAllowed, setApiAllowed] = useState(true);
+  const notesWrites = useRef<Promise<void>>(Promise.resolve());
+
+  const run = (work: () => void | Promise<void>) => async () => { setNotice(''); try { await work(); } catch (e) { setNotice(e instanceof Error ? e.message : String(e)); } };
+
+  // Load everything once.
+  useEffect(() => {
+    (async () => {
+      const [p, d, g, f, s, c, on, k] = await Promise.all(['profile', 'description', 'goodFits', 'feedback', 'settings', 'aiCount', 'formaEnabled', 'apiKey'].map(store.get));
+      const merged = consolidateFitNotes(cleanProfile(p), typeof d === 'string' ? d : '');
+      if (merged.description !== (d || '')) await store.set('description', merged.description);
+      setProfile(merged.profile); setNotes(merged.description);
+      setGoodFits(normaliseGoodFits(g)); setFeedback(normaliseFeedback(f));
+      const provider = providerOf(s); setMode(provider.mode); setModel(provider.model || DEFAULT_MODEL);
+      setCount(Number(c) || 0); setLimit(requestLimit(s)); setLimitDraft(String(requestLimit(s))); setUnlimited(hasNoRequestCap(s)); setUnlimitedDraft(hasNoRequestCap(s));
+      setEnabled(on !== false); setKey(typeof k === 'string' ? k : '');
+      if (extension) {
+        setApiAllowed(await chrome.permissions.contains({ origins: ['https://api.anthropic.com/*'] }));
+        setAutoEnabled(await automaticDetectionEnabled().catch(() => false));
+      }
+      setReady(true);
+    })().catch(() => setNotice('Could not load your saved data. Reload the FORMA panel.'));
+  }, []);
+
+  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+
+  // Follow the active tab and its page state.
+  useEffect(() => {
+    if (!extension) return;
+    let revision = 0;
+    const refresh = async () => {
+      const own = ++revision;
+      const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (own !== revision) return;
+      setTab(t?.id); setTabUrl(t?.url || '');
+      if (!t?.id) { setPage(null); return; }
+      const data = await chrome.storage.session.get(['page:' + t.id, 'fit-editor:' + t.id]);
+      if (own !== revision) return;
+      const state = data['page:' + t.id] as PageState | undefined;
+      const current = state && t.url && state.identity === productIdentity(t.url) ? state : null;
+      setPage(current);
+      const want = data['fit-editor:' + t.id] as Intent | undefined;
+      setIntent(want && current && productIdentity(want.url) === current.identity ? want : null);
+    };
+    const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'session') void refresh();
+      if (area !== 'local') return;
+      if (changes.formaEnabled) setEnabled(changes.formaEnabled.newValue !== false);
+      if (changes.aiCount) setCount(Number(changes.aiCount.newValue) || 0);
+      if (changes.goodFits) setGoodFits(normaliseGoodFits(changes.goodFits.newValue));
+      if (changes.feedback) setFeedback(normaliseFeedback(changes.feedback.newValue));
+      if (changes.settings) { const v = changes.settings.newValue; setLimit(requestLimit(v)); setUnlimited(hasNoRequestCap(v)); }
+    };
+    const updated = (_id: number, change: chrome.tabs.OnUpdatedInfo) => { if (change.url || change.status === 'complete') void refresh(); };
+    const activated = () => { setPage(null); void refresh(); };
+    void refresh();
+    chrome.storage.onChanged.addListener(changed); chrome.tabs.onUpdated.addListener(updated); chrome.tabs.onActivated.addListener(activated);
+    return () => { revision++; chrome.storage.onChanged.removeListener(changed); chrome.tabs.onUpdated.removeListener(updated); chrome.tabs.onActivated.removeListener(activated); };
+  }, []);
+
+  // Make sure the active page has a reader. A live reader is reused without a new scan.
+  useEffect(() => {
+    if (!extension || !connectPage || !ready || !enabled) return;
+    let revision = 0;
+    const attach = async () => {
+      const own = ++revision;
+      const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (own !== revision || t?.status === 'loading') return;
+      setConnection({ status: 'checking', message: 'Connecting to this page…', at: Date.now() });
+      const state = await connectPage(t || {});
+      if (own === revision) setConnection(state);
+    };
+    const fail = () => setConnection({ status: 'error', message: 'Could not connect. Press Refresh to try again.', at: Date.now() });
+    const activate = () => { attach().catch(fail); };
+    const updated = (_id: number, change: chrome.tabs.OnUpdatedInfo) => { if (change.status === 'complete') activate(); };
+    activate();
+    chrome.tabs.onActivated.addListener(activate); chrome.tabs.onUpdated.addListener(updated); chrome.permissions.onAdded.addListener(activate);
+    return () => { revision++; chrome.tabs.onActivated.removeListener(activate); chrome.tabs.onUpdated.removeListener(updated); chrome.permissions.onAdded.removeListener(activate); };
+  }, [ready, enabled]);
+
+  useEffect(() => { if (intent) { setStep('fit'); setTimeout(() => document.getElementById('fit-editor')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150); } }, [intent?.id]);
+
+  // ------------------------------------------------------------ actions
+
+  async function connect(options: { force?: boolean; retry?: boolean; fresh?: boolean }) {
+    if (!connectPage || !extension) return;
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    setConnection({ status: 'checking', message: 'Connecting to this page…', at: Date.now() });
+    const state = await connectPage(t || {}, options);
+    setConnection(state);
+    if (state.status !== 'connected') throw Error(state.message);
+  }
+
+  async function register(origins: string[], id: string) {
+    const scripts = await chrome.scripting.getRegisteredContentScripts();
+    if (scripts.some(s => s.id === id)) await chrome.scripting.updateContentScripts([{ id, matches: origins, js: ['content.js'], runAt: 'document_idle' }]);
+    else await chrome.scripting.registerContentScripts([{ id, matches: origins, js: ['content.js'], runAt: 'document_idle' }]);
+  }
+
+  /** Manual activation: connect this shop and assess the page even if it was not recognised. */
+  async function analyseThisPage() {
+    if (!extension) throw Error('Load FORMA as a Chrome extension first.');
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!t?.url || !/^https?:/.test(t.url)) throw Error('Switch to a shop tab. Chrome pages cannot be analysed.');
+    const origins = [new URL(t.url).origin + '/*'];
+    const wanted = mode === 'anthropic' ? [...origins, 'https://api.anthropic.com/*'] : mode === 'ollama' ? [...origins, 'http://localhost:11434/*'] : origins;
+    if (!await chrome.permissions.request({ origins: wanted })) throw Error('Website access was not granted.');
+    setApiAllowed(await chrome.permissions.contains({ origins: ['https://api.anthropic.com/*'] }));
+    if (!autoEnabled) await register(origins, 'shop-' + new URL(t.url).hostname.replace(/[^a-z0-9]/gi, '-'));
+    await connect({ force: true, retry: true });
+  }
+
+  async function startSetup() {
+    if (!extension) throw Error('Load FORMA as a Chrome extension first.');
+    if (!key.trim()) throw Error('Enter your Anthropic API key first.');
+    if (!await chrome.permissions.request({ origins: [...ALL_SITES, 'https://api.anthropic.com/*'] })) throw Error('Chrome did not grant access. FORMA needs it to read shop pages and reach Anthropic.');
+    const settings = await store.get('settings');
+    await chrome.storage.local.set({ apiKey: key.trim(), settings: { ...settings, mode: 'anthropic', model, limit: requestLimit(settings), limitVersion: 1 } });
+    await enableAutomaticDetection(chrome, async t => { await connect({}).catch(() => {}); void t; });
+    setAutoEnabled(true); setApiAllowed(true); setMode('anthropic');
+    setNotice('Ready. Open any clothing product page; FORMA checks it automatically.');
+  }
+
+  async function saveSettings(next: { mode?: Mode; model?: string }) {
+    const settings = await store.get('settings');
+    const merged = { ...settings, mode: next.mode ?? mode, model: next.model ?? model, limit: requestLimit(settings), limitVersion: 1 };
+    await store.set('settings', merged);
+    if (next.mode) setMode(next.mode);
+    if (next.model !== undefined) setModel(next.model);
+  }
+
+  async function saveBudget(addMore = false) {
+    const [settings, used] = await Promise.all([store.get('settings'), store.get('aiCount')]);
+    const next = addMore ? additionalRequests(requestLimit(settings), Number(used || 0)) : unlimitedDraft ? requestLimit(settings) : Number(limitDraft);
+    if (!Number.isSafeInteger(next) || next < 0) throw Error('Enter a whole number of requests, zero or higher.');
+    const uncapped = addMore ? false : unlimitedDraft;
+    await store.set('settings', { ...settings, limit: next, limitVersion: 1, unlimited: uncapped });
+    setLimit(next); setLimitDraft(String(next)); setUnlimited(uncapped); setUnlimitedDraft(uncapped);
+    setNotice(uncapped ? 'No request cap. Usage is still counted.' : `Request limit: ${next}.`);
+  }
+
+  async function toggleEnabled() {
+    const next = !enabled;
+    await store.set('formaEnabled', next); setEnabled(next);
+  }
+
+  async function saveProfile(next: Profile) { await store.set('profile', next); setProfile(next); }
+
+  function saveNotes(value: string) {
+    const job = notesWrites.current.catch(() => {}).then(() => store.set('description', value)).then(() => setNotes(value));
+    notesWrites.current = job; return job;
+  }
+
+  /** Notes changed what the AI should know: reassess this page. */
+  async function applyNotes() {
+    await notesWrites.current;
+    if (!page) throw Error('Notes are saved. Open a product to assess it.');
+    await connect({ retry: true });
+    setStep('fit');
+  }
+
+  const defaultSize = () => page?.decision?.size || page?.decision?.closest || page?.listing?.sizes.find(s => s.selected)?.label || (page?.listing?.sizes.length === 1 ? page.listing.sizes[0].label : '');
+
+  async function closeIntent() { setIntent(null); if (extension && tab) await chrome.storage.session.remove('fit-editor:' + tab); }
+
+  async function saveGoodFit(details: FitDetails) {
+    if (!page) throw Error('Open a product page first.');
+    const size = details.size.trim();
+    const measures = page.reading?.sizes.find(s => s.label === size)?.measures;
+    const entry: GoodFit = { url: page.url, name: page.title, kind: page.decision?.kind || page.listing?.kind || guessKind(page.title), size, reason: details.note, savedAt: Date.now(), measures: measures?.length ? measures : undefined, image: page.listing?.images[0] };
+    const next = [entry, ...goodFits.filter(g => productIdentity(g.url) !== page.identity)].slice(0, 60);
+    await store.set('goodFits', next); setGoodFits(next);
+    setNotice(size ? `Saved: ${size} fits you. FORMA compares future ${KIND_LABELS[entry.kind || 'other'].toLowerCase()}s with it.` : 'Saved. Add the size you wear so FORMA can compare measurements.');
+    await closeIntent();
+  }
+
+  async function saveFeedback(details: FitDetails) {
+    if (!page || !details.size) throw Error('Add the size you tried.');
+    const entry: Feedback = { name: page.title, url: page.url, size: details.size, value: details.issue || 'Fit note', note: details.note };
+    const next = [entry, ...feedback.filter(f => !(f.url && productIdentity(f.url) === page.identity && f.size === details.size))].slice(0, 100);
+    await store.set('feedback', next); setFeedback(next);
+    setNotice('Feedback saved. FORMA uses it for this item and similar garments.');
+    await closeIntent();
+  }
+
+  async function editFeedback(entry: Feedback, original: Feedback) {
+    const next = [entry, ...feedback.filter(f => f !== original)].slice(0, 100);
+    await store.set('feedback', next); setFeedback(next);
+  }
+  async function removeFeedback(original: Feedback) {
+    const next = feedback.filter(f => f !== original);
+    await store.set('feedback', next); setFeedback(next);
+  }
+  async function editGoodFit(entry: GoodFit, details: FitDetails) {
+    const next = goodFits.map(g => g === entry ? { ...g, size: details.size, reason: details.note } : g);
+    await store.set('goodFits', next); setGoodFits(next);
+  }
+  async function removeGoodFit(entry: GoodFit) {
+    const next = goodFits.filter(g => g !== entry);
+    await store.set('goodFits', next); setGoodFits(next);
+  }
+
+  async function showOnPage() {
+    if (!extension || !tab || !page) throw Error('Open a product page first.');
+    const response = await chrome.tabs.sendMessage(tab, { type: 'show-result', state: { ...page, listing: undefined } }).catch(() => null);
+    if (!response?.shown) throw Error('The page reader is disconnected. Reload the shop page.');
+  }
+
+  async function importProfile(file: File) {
+    const imported = JSON.parse(await file.text());
+    if (imported.kind === 'forma-profile-update') {
+      const next = applyProfileUpdate(profile, imported);
+      const nextFeedback = profileFeedbackUpdate(imported, feedback);
+      if (imported.fitNotes && !notes.includes(imported.fitNotes)) await saveNotes([notes.trim(), imported.fitNotes.trim()].filter(Boolean).join('\n\n').slice(0, 6000));
+      await store.set('feedback', nextFeedback); setFeedback(nextFeedback);
+      await saveProfile(next);
+      setNotice('Profile updated. Measurements, notes and saved clothes are kept.');
+      return;
+    }
+    const { fitDescription, ...p } = imported;
+    if (!p || typeof p !== 'object' || typeof p.name !== 'string' || !['close', 'regular', 'relaxed', 'oversized'].includes(p.fit)) throw Error('This is not a FORMA profile.');
+    await saveProfile(cleanProfile(p));
+    if (typeof fitDescription === 'string') await saveNotes(fitDescription.slice(0, 6000));
+    setNotice('Profile imported.');
+  }
+
+  // ------------------------------------------------------------ view
+
+  const status = page?.status;
+  const waitingTooLong = status === 'assessing' && now - (page?.at || now) > ANSWER_MS;
+  const savedHere = page ? goodFits.find(g => productIdentity(g.url) === page.identity) : undefined;
+  const setupNeeded = ready && mode === 'anthropic' && (!key || !apiAllowed);
+  const overLimit = mode !== 'none' && !unlimited && count >= limit;
+
+  function statusBlock() {
+    if (!enabled) return <div className="verdict"><h2>FORMA is off</h2><p>No pages are read and no AI requests are sent. Saved results stay available.</p></div>;
+    if (!page) {
+      const title = connection.status === 'permission' ? 'Connect this shop' : connection.status === 'unsupported' ? 'Open a product page' : connection.status === 'error' ? 'Page connection failed' : 'Reading the page…';
+      return <div className="verdict"><h2>{title}</h2><p>{connection.status === 'connected' ? 'FORMA is reading the product. Nothing was sent to an AI yet.' : connection.message}</p></div>;
+    }
+    if (status === 'other') return <div className="verdict"><span className="eyebrow">LOCAL CHECK · NO AI USED</span><h2>No clothing product here</h2><p>{page.message}</p></div>;
+    if (status === 'assessing') return <div className="verdict"><span className="eyebrow">{mode === 'none' ? 'LOCAL COMPARISON' : 'AI ASSESSMENT'}</span><h2>{waitingTooLong ? 'No answer yet' : 'Checking the fit…'}</h2><p>{waitingTooLong ? 'The request is taking unusually long. Press Refresh to try again.' : `Reading sizes, measurements and photos (${Math.round((now - page.at) / 1000)} s).`}</p></div>;
+    if (status === 'blocked' || status === 'error') return <div className="verdict"><span className="eyebrow">{status === 'error' ? 'ASSESSMENT FAILED' : 'NEEDS ATTENTION'}</span><h2>{status === 'error' ? 'Could not assess this page' : page.code === 'limit' ? 'Request limit reached' : page.code === 'profile' ? 'Tell FORMA about you' : 'Set up the AI connection'}</h2><p>{page.message}</p>
+      {page.code === 'profile' && <button onClick={() => setStep('profile')}>Open your profile</button>}
+      {(page.code === 'key' || page.code === 'permission') && <button onClick={() => setStep('settings')}>Open settings</button>}
+      {page.code === 'limit' && <button className="primary" onClick={run(() => saveBudget(true))}>Allow 100 more requests</button>}
+    </div>;
+    if (status === 'ready' && page.decision) return <Verdict state={page} />;
+    return null;
+  }
+
+  return <>
+    <header>
+      <div className="wordmark" aria-label="FORMA">forma<span className="brand-dot" aria-hidden="true">.</span></div>
+      <button className="power-switch" role="switch" aria-label="FORMA enabled" aria-checked={enabled} disabled={!ready} onClick={run(toggleEnabled)}><span>{enabled ? 'On' : 'Off'}</span><span className="switch-track" aria-hidden="true"><span /></span></button>
+      <button className="theme" onClick={() => setDark(!dark)} aria-label="Toggle colour theme">{dark ? '☀' : '◐'}</button>
+    </header>
+    <div className="shell">
+      <aside><nav>{([['fit', '01', 'Your fit'], ['profile', '02', 'Your profile'], ['settings', '03', 'Settings']] as const).map(([s, n, t]) => <button key={s} onClick={() => setStep(s)} aria-current={s === step ? 'step' : undefined}><span>{n}</span>{t}</button>)}</nav></aside>
+      <main>
+        {notice && <div className="notice" role="status">{notice}</div>}
+
+        {step === 'fit' && <section>
+          <div className="bar">01 / YOUR FIT</div>
+          {setupNeeded && <div className="card setup"><h2>Start with your key</h2><p className="small">FORMA uses Claude to read garments and estimate measurements. Your key stays on this device.</p>
+            <label>Anthropic API key<input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} /></label>
+            <button className="primary" disabled={!key.trim()} onClick={run(startSetup)}>Enable FORMA on shop pages</button>
+            <p className="small">Chrome asks once for access to websites and to api.anthropic.com. Prefer no AI? Choose “No AI” in Settings.</p></div>}
+          <h1>{page?.title || 'Browse. Find your fit.'}</h1>
+          <div className="actions">
+            <button className={page?.status === 'ready' ? undefined : 'primary'} disabled={!enabled || busy} onClick={run(async () => { setBusy(true); try { await analyseThisPage(); } finally { setBusy(false); } })}>{page?.manual ? 'Analyse again' : 'Analyse this page'}</button>
+            <button disabled={!enabled || busy || !tabUrl.startsWith('http')} onClick={run(() => connect({ retry: true, fresh: true }))}>Refresh</button>
+            {page?.status === 'ready' && <button onClick={run(showOnPage)}>Show on page</button>}
+          </div>
+          {statusBlock()}
+          {overLimit && status !== 'blocked' && <div className="notice"><strong>{count} / {limit} AI requests used.</strong> Saved results still work. <button onClick={run(() => saveBudget(true))}>Allow 100 more</button></div>}
+
+          {page && (status === 'ready' || status === 'error' || status === 'blocked') && <div className="card" id="fit-editor">
+            <h2>Have you worn it?</h2>
+            {intent?.kind !== 'bad' && <>
+              <p className="small">{savedHere ? `Saved as a good fit${savedHere.size ? ` in ${savedHere.size}` : ''}. Update it below.` : 'Save it as a good fit. FORMA then compares new garments of this type with its measurements.'}</p>
+              <FitDetailsForm key={'good' + (intent?.id || '') + page.identity} initial={{ size: savedHere?.size || (intent?.kind === 'good' ? defaultSize() : ''), note: savedHere?.reason || '', issue: '' }} save={saveGoodFit} />
+            </>}
+            {intent?.kind === 'bad' ? <>
+              <p className="small">Which size did you try, and what was wrong?</p>
+              <FitDetailsForm key={'bad' + intent.id} initial={{ size: defaultSize(), note: '', issue: '' }} sizeRequired allowIssues save={saveFeedback} />
+              <button onClick={run(closeIntent)}>Cancel</button>
+            </> : <button onClick={() => page && setIntent({ kind: 'bad', url: page.url, id: crypto.randomUUID() })}>It didn't fit</button>}
+          </div>}
+          {page?.listing && <ListingInfo listing={page.listing} />}
+          <p className="small">Refresh rereads the page and asks the AI again. Opening a page you already checked reuses the saved assessment.</p>
+        </section>}
+
+        {step === 'profile' && <section>
+          <div className="bar">02 / YOUR PROFILE</div>
+          <h1>Your profile.</h1>
+          <ProfileEditor profile={profile} save={saveProfile} />
+          <h2>Fit notes</h2>
+          <p className="muted">What feels right, what bothers you, exceptions per garment type. English or German.</p>
+          <ProfileNotes draft={notesDraft} Draft={setNotesDraft} saved={notes} ready={ready} save={saveNotes} apply={applyNotes} canApply={!!page} />
+          <div className="card"><h2>Clothes that fit you</h2>
+            <p className="small">The strongest evidence FORMA has: garments you own and like, with the size you wear. Save them from their product page.</p>
+            {goodFits.length ? goodFits.map((g, i) => <details key={g.url + i}><summary>{g.name}{g.size ? ` · ${g.size}` : ' · size missing'}</summary>
+              <p className="small">{g.kind ? KIND_LABELS[g.kind] : 'Garment'} · {g.measures?.length ? `${g.measures.length} measurements saved` : 'no measurements saved'} · <a href={g.url} target="_blank" rel="noreferrer">product page</a></p>
+              <FitDetailsForm initial={{ size: g.size, note: g.reason, issue: '' }} save={d => editGoodFit(g, d)} remove={() => removeGoodFit(g)} />
+            </details>) : <p className="small">Nothing saved yet. Open a product you own and use “Fits me”.</p>}
+          </div>
+          <div className="card"><h2>Fit feedback</h2>
+            {feedback.length ? feedback.map((f, i) => <details key={(f.url || f.name) + f.size + i}><summary>{f.name} · {f.size} · {f.value}</summary>
+              <FitDetailsForm initial={{ size: f.size, note: f.note || '', issue: f.value === 'Fit note' ? '' : f.value }} sizeRequired allowIssues save={d => editFeedback({ ...f, size: d.size, note: d.note, value: d.issue || 'Fit note' }, f)} remove={() => removeFeedback(f)} />
+            </details>) : <p className="small">No feedback yet.</p>}
+          </div>
+          <details><summary>Move your profile to another computer</summary>
+            <button onClick={() => { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...profile, fitDescription: notes })], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = 'forma-profile.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export profile</button>
+            <label>Import profile<input type="file" accept="application/json" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => importProfile(file))(); }} /></label>
+          </details>
+        </section>}
+
+        {step === 'settings' && <section>
+          <div className="bar">03 / SETTINGS</div>
+          <h1>Settings.</h1>
+          <label>Assessment<select value={mode} onChange={e => void run(() => saveSettings({ mode: e.target.value as Mode, model: e.target.value === 'anthropic' ? DEFAULT_MODEL : e.target.value === 'ollama' ? '' : '' }))()}>
+            <option value="anthropic">Anthropic · my API key</option><option value="ollama">Ollama · this computer</option><option value="none">No AI · compare published measurements only</option>
+          </select></label>
+          {mode === 'anthropic' && <>
+            <label>Model<select value={model} onChange={e => void run(() => saveSettings({ model: e.target.value }))()}>{MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
+            <label>API key · stored on this device<input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} onBlur={() => { if (extension) void chrome.storage.local.set({ apiKey: key.trim() }); }} /></label>
+            <div className="actions">
+              <button onClick={run(async () => { if (await chrome.permissions.request({ origins: ['https://api.anthropic.com/*'] })) { setApiAllowed(true); setNotice('Connection to Anthropic allowed.'); } })} disabled={apiAllowed}>{apiAllowed ? '✓ Connection allowed' : 'Allow connection'}</button>
+              <button onClick={run(async () => { setKey(''); await chrome.storage.local.remove('apiKey'); setNotice('API key removed from this device.'); })}>Forget API key</button>
+            </div>
+            <p className="small">The key is kept in this extension's storage, not in profile exports. Browser storage is not an encrypted vault.</p>
+          </>}
+          {mode === 'ollama' && <><label>Installed Ollama model<input value={model} onChange={e => setModel(e.target.value)} onBlur={() => void saveSettings({ model })} placeholder="e.g. llama3.2" /></label>
+            <p className="small">Start Ollama with OLLAMA_ORIGINS set to this extension's origin. Photos are not sent to local models.</p>
+            <button onClick={run(async () => { if (await chrome.permissions.request({ origins: ['http://localhost:11434/*'] })) setNotice('Connection to Ollama allowed.'); })}>Allow connection</button></>}
+          {mode === 'none' && <p className="small">FORMA compares published measurements and seller measurements with your clothes and body measurements. Without AI, pages without measurements cannot be judged.</p>}
+
+          <h2>Shops</h2>
+          <button disabled={autoEnabled} onClick={async () => { setAutoMessage('Waiting for Chrome…'); try { await enableAutomaticDetection(chrome, async () => { await connect({}).catch(() => {}); }); setAutoEnabled(true); setAutoMessage('Active on all shops.'); } catch (e) { setAutoMessage(e instanceof Error ? e.message : 'Could not enable.'); } }}>{autoEnabled ? '✓ Automatic on all shops' : 'Enable on all shops'}</button>
+          <p className="small" role="status">{autoMessage || 'Product pages are recognised locally. Only clothing products are sent for assessment.'}</p>
+
+          {mode !== 'none' && <>
+            <h2>Requests</h2>
+            <p><strong>{unlimited ? `${count} used · no cap` : `${count} / ${limit} used · ${Math.max(0, limit - count)} left`}</strong></p>
+            <div className="grid">
+              <label>Cap<select value={unlimitedDraft ? 'unlimited' : 'limited'} onChange={e => setUnlimitedDraft(e.target.value === 'unlimited')}><option value="limited">Limit total requests</option><option value="unlimited">No cap</option></select></label>
+              <label>Limit<input type="number" min="0" step="1" disabled={unlimitedDraft} value={limitDraft} onChange={e => setLimitDraft(e.target.value)} /></label>
+            </div>
+            <div className="actions"><button disabled={limitDraft === String(limit) && unlimitedDraft === unlimited} onClick={run(() => saveBudget())}>Save limit</button><button onClick={run(() => saveBudget(true))}>Allow 100 more</button></div>
+            <p className="small">One request per product. Opening it again uses the saved answer; Refresh asks again. Failed attempts count. Sent to the provider: the product page's text, sizes, tables and up to three photos, plus your profile (no name), notes and the clothes you saved.</p>
+          </>}
+        </section>}
+      </main>
+    </div>
+    <footer><span>FORMA · FIT WITH REASONS</span><span>STORED LOCALLY</span></footer>
+  </>;
+}
+
+createRoot(document.getElementById('root')!).render(<App />);

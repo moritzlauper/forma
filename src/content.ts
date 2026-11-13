@@ -85,7 +85,8 @@ import type { Listing, PageState } from './core/types';
       if (!listing || disposed || own !== generation) return;
       if (relevant(listing) && !listing.marketplace && !hasMeasureTable(listing) && !guideTried) {
         guideTried = true;
-        if (await openSizeGuide(document)) listing = readListing(document);
+        const close = await openSizeGuide(document);
+        if (close) { listing = readListing(document); close(); }
         if (disposed || own !== generation) return;
       }
       // The first send uses the full, settled listing. After that, only material

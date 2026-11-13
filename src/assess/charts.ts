@@ -79,7 +79,9 @@ export function parseChart(table: Table): ChartSize[] {
   const header = rows[0];
   const caption = table.caption + ' ' + header.join(' ');
   // "Body length HPS" is a garment length; only explicit body-size wording makes a body chart.
-  const body = /body (?:measurements?|sizes?)|\bbody\b(?!\s*(?:length|width|len))|körper|to fit|koerperma|your measurements|deine ma(?:ss|ß)e|ihre ma(?:ss|ß)e/i.test(caption)
+  // Measuring instructions addressed to the shopper ("Ihrer Brust", tape measure)
+  // and "Brustkorb" (rib cage) also mark body measurements.
+  const body = /body (?:measurements?|sizes?)|\bbody\b(?!\s*(?:length|width|len))|körper|to fit|koerperma|your measurements|deine ma(?:ss|ß)e|ihre ma(?:ss|ß)e|ma(?:ss|ß)band|tape measure|measuring tape|ihre[rn]? (?:brust|taille|hüfte)|your (?:chest|waist|hips?)|brustkorb/i.test(caption)
     && !/garment|product measurements|kleidungsst|produktma|pit[\s-]?to[\s-]?pit|\bhps\b|laid flat|flach/i.test(caption);
   // Pick the size column: a named size column, else INT, else the first column of size labels.
   let label = header.findIndex(h => SIZE_HEADER.test(h.trim()));

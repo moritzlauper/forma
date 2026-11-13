@@ -286,8 +286,30 @@ function tableContext(el: Element, own: string): string {
   const container = el.closest('dialog,[role="dialog"],[role="tabpanel"],details,section,article') || el.parentElement;
   const caption = clean(el.querySelector('caption')?.textContent);
   const around = clean(container?.textContent).replace(own, ' ');
-  const hints = around.match(/[^.]{0,80}\b(?:cm|inch|inches|zoll|flat|laid|flach|half|halbe|circumference|umfang|body|körper|garment|kleidungsst|product measurements|to fit)\b[^.]{0,80}/gi) || [];
+  const hints = around.match(/[^.]{0,80}\b(?:cm|inch|inches|zoll|flat|laid|flach|half|halbe|circumference|umfang|body|körper|garment|kleidungsst|product measurements|to fit|ma(?:ss|ß)band|tape measure|measuring tape|ihre[rn]? (?:brust|taille|hüfte)|your (?:chest|waist|hips?))\b[^.]{0,80}/gi) || [];
   return stableText([caption, ...hints.slice(0, 3)].join(' ')).slice(0, 400);
+}
+
+/**
+ * Rows of a table with rowspan/colspan cells repeated where they apply. COS
+ * spans one letter size over two EU rows; without this the second row shifts
+ * every value one column to the left.
+ */
+function spannedRows(table: Element, cell: (c: Element) => string): string[][] {
+  const grid: string[][] = [];
+  Array.from(table.querySelectorAll('tr,[role="row"]')).slice(0, 60).forEach((tr, y) => {
+    const row = grid[y] ||= [];
+    let x = 0;
+    for (const c of Array.from(tr.querySelectorAll('th,td,[role="cell"],[role="gridcell"],[role="columnheader"],[role="rowheader"]'))) {
+      while (row[x] !== undefined) x++;
+      const down = Math.min(Math.max(Number(c.getAttribute('rowspan')) || 1, 1), 40);
+      const across = Math.min(Math.max(Number(c.getAttribute('colspan')) || 1, 1), 14);
+      const text = cell(c);
+      for (let dy = 0; dy < down; dy++) for (let dx = 0; dx < across; dx++) (grid[y + dy] ||= [])[x + dx] = text;
+      x += across;
+    }
+  });
+  return grid.map(r => Array.from(r, c => c ?? ''));
 }
 
 export function readTables(doc: Document): Table[] {
@@ -302,8 +324,7 @@ export function readTables(doc: Document): Table[] {
   };
   for (const table of Array.from(doc.querySelectorAll('table,[role="table"],[role="grid"]'))) {
     if (ignored(table) || out.length >= 6) continue;
-    const rows = Array.from(table.querySelectorAll('tr,[role="row"]')).map(r => Array.from(r.querySelectorAll('th,td,[role="cell"],[role="gridcell"],[role="columnheader"],[role="rowheader"]')).map(cell));
-    push(table, rows);
+    push(table, spannedRows(table, cell));
   }
   // CSS-grid charts built from divs: consistent rows of short cells, in the
   // product area or a size-guide dialog. Strict shape checks keep prose out.

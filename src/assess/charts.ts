@@ -1,5 +1,5 @@
 import { FLAT_DIMS } from '../core/garment';
-import { isSizeLabel, sameSize } from '../core/sizes';
+import { canonicalSize, isSizeLabel, sameSize } from '../core/sizes';
 import type { BodyDim, BodyRange, Dim, Listing, Measure, Table } from '../core/types';
 
 /**
@@ -8,10 +8,14 @@ import type { BodyDim, BodyRange, Dim, Listing, Measure, Table } from '../core/t
  * Anything ambiguous is left out rather than guessed.
  */
 
-export type ChartSize = { label: string; measures: Measure[]; body: BodyRange[] };
+/** `waistOnly`: the chart labels jeans by waist alone (27, 28, …) while the shop sells W/L pairs. */
+export type ChartSize = { label: string; measures: Measure[]; body: BodyRange[]; waistOnly?: boolean };
 
 const SYSTEMS = /^(?:EU|EUR|INT|INTERNATIONAL|UK|US|USA|IT|FR|DE|JP|CN|MEX|AU|BR|JEANS|W|L|LETTER|ALPHA)(?:\s*(?:SIZE|GR(?:Ö|OE)SSE))?$/i;
-const SIZE_HEADER = /^(?:size|grösse|größe|groesse|gr\.?|taille|tg\.?|int|international|standardgr(?:ö|oe)sse)$/i;
+// "Taille" is not listed: in German charts it is the waist. A French size
+// column is still found by its values.
+const SIZE_HEADER = /^(?:jeans\s*)?(?:size|gr(?:ö|oe)(?:ss|ß)e|gr\.?|tg\.?|int|international|standardgr(?:ö|oe)sse)(?:\s*\((?:in|inch|eu|us|uk|int)\))?$/i;
+const WAIST_LABEL = /jeans|waist|bundweite|\(in\)|inch|zoll|^W$/i;
 
 /** Garment dimension named by a header. Order matters: specific before generic. */
 export function headerDim(header: string): Dim | null {
@@ -88,12 +92,15 @@ export function parseChart(table: Table): ChartSize[] {
   if (label < 0) label = header.findIndex(h => /^INT/i.test(h.trim()));
   if (label < 0) label = header.findIndex((_, i) => rows.slice(1).filter(r => isSizeLabel(r[i] || '')).length >= Math.max(2, (rows.length - 1) * 0.6));
   if (label < 0) return [];
-  const tableUnit = unitOf(caption);
+  // A unit in the size column ("Jeansgrösse (in)") describes the labels, not the measurements.
+  const tableUnit = unitOf(table.caption + ' ' + header.filter((h, i) => i !== label && !SYSTEMS.test(h.trim())).join(' '));
+  const labels = rows.slice(1).map(r => (r[label] || '').trim()).filter(Boolean);
+  const waistOnly = WAIST_LABEL.test(header[label].trim()) && labels.length > 0 && labels.every(l => /^\d{2}$/.test(l));
   const out: ChartSize[] = [];
   for (const row of rows.slice(1)) {
     const size = (row[label] || '').trim();
     if (!size || !isSizeLabel(size)) continue;
-    const entry: ChartSize = { label: size, measures: [], body: [] };
+    const entry: ChartSize = { label: size, measures: [], body: [], ...(waistOnly ? { waistOnly } : {}) };
     header.forEach((h, i) => {
       if (i === label || SYSTEMS.test(h.trim()) || !row[i]) return;
       const range = numbers(row[i]);
@@ -103,7 +110,7 @@ export function parseChart(table: Table): ChartSize[] {
       let [lo, hi] = [range[0] * factor, range[1] * factor];
       if (body) {
         const dim = bodyDim(h);
-        if (dim) entry.body.push({ dim, min: round(lo), max: round(hi) });
+        if (dim && !entry.body.some(b => b.dim === dim)) entry.body.push({ dim, min: round(lo), max: round(hi) });
         return;
       }
       const dim = headerDim(h);
@@ -130,7 +137,26 @@ export function parseChart(table: Table): ChartSize[] {
       } else out.push(entry);
     }
   }
+  widenPoints(out);
   return out;
+}
+
+/**
+ * Charts that give one body value per size (COS jeans: waist 95.5) cover the
+ * bodies up to halfway to the neighbouring sizes.
+ */
+function widenPoints(sizes: ChartSize[]) {
+  for (const dim of ['chest', 'waist', 'hip', 'inseam', 'height', 'foot'] as BodyDim[]) {
+    const points = sizes.map(s => s.body.find(b => b.dim === dim)).filter((b): b is BodyRange => !!b);
+    if (points.length < 2 || points.some(p => p.min !== p.max)) continue;
+    const values = points.map(p => p.min);
+    if (values.some((v, i) => i > 0 && v <= values[i - 1])) continue;
+    points.forEach((p, i) => {
+      const below = i > 0 ? (values[i] - values[i - 1]) / 2 : (values[1] - values[0]) / 2;
+      const above = i < values.length - 1 ? (values[i + 1] - values[i]) / 2 : (values[i] - values[i - 1]) / 2;
+      p.min = round(values[i] - below); p.max = round(values[i] + above);
+    });
+  }
 }
 
 const FACT = /(pit[\s-]?to[\s-]?pit|achsel(?:\s*zu\s*achsel)?|brust(?:umfang|breite|weite)?|chest(?: width)?|breite|schulter(?:breite)?|shoulders?|ärmel(?:länge)?|sleeves?(?: length)?|(?:gesamt|rücken)?länge|(?:total |body |back )?length|lang|bund(?:weite)?|taille|waist|hüfte|hips?|schrittlänge|innenbeinlänge|inseam|oberschenkel|thigh|saum|hem|leibhöhe|rise)\s*(?:\([^)]{0,20}\))?\s*[:=]?\s*(?:ca\.?|ungefähr|approx\.?|~)?\s*(\d{2,3}(?:[.,]\d)?)\s*(cm|inch|in|")?/gi;
@@ -178,6 +204,24 @@ export function localSizes(listing: Listing): ChartSize[] {
     }
   }
   return sizes;
+}
+
+/**
+ * The chart entry for an offered size. A W/L size ("36/34") falls back to a
+ * waist-only chart row ("36"). That row's inseam belongs to the waist, not to
+ * the L, so lengths are left to the L number.
+ */
+export function chartFor(local: ChartSize[], label: string): ChartSize | undefined {
+  const exact = local.find(l => sameSize(l.label, label));
+  if (exact) return exact;
+  const pair = canonicalSize(label).match(/^(\d{2})\/\d{2}$/);
+  const row = pair && local.find(l => l.waistOnly && canonicalSize(l.label) === pair[1]);
+  if (!row) return undefined;
+  return {
+    label,
+    measures: row.measures.filter(m => m.dim !== 'inseam' && m.dim !== 'length'),
+    body: row.body.filter(b => b.dim !== 'inseam' && b.dim !== 'height'),
+  };
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;

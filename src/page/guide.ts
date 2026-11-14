@@ -17,7 +17,9 @@ function isVisible(el: HTMLElement): boolean {
 }
 
 export function findGuideControl(doc: Document, tried: Set<Element>): HTMLElement | null {
-  const roots = [productRoot(doc), ...Array.from(doc.querySelectorAll('dialog,[role="dialog"]'))];
+  // An open guide's own tabs come first (Carhartt opens on product
+  // measurements; the chart sits behind a second tab).
+  const roots = [...Array.from(doc.querySelectorAll('dialog[open],[role="dialog"]')), productRoot(doc)];
   for (const root of roots) {
     for (const el of Array.from(root.querySelectorAll<HTMLElement>(CONTROLS))) {
       if (tried.has(el) || el.closest('footer,header,#forma-fit-card')) continue;
@@ -45,29 +47,41 @@ const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
  * Opens the guide and resolves once new tables appeared, with a function that
  * closes a dialog FORMA opened. Read the page before calling it: some shops
  * remove the chart from the DOM when the dialog closes. Null when nothing
- * appeared. Tries at most two controls.
+ * appeared. Tries at most three controls, so a guide that opens on another
+ * tab can still be switched to its chart.
  */
 export async function openSizeGuide(doc: Document, wait = pause): Promise<(() => void) | null> {
   const before = readTables(doc).length;
+  const hadDialog = !!openDialog(doc);
+  const close = () => { if (!hadDialog) closeDialog(doc); };
   const tried = new Set<Element>();
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const control = findGuideControl(doc, tried);
-    if (!control) return null;
+    if (!control) break;
     tried.add(control);
-    const openedDialog = !doc.querySelector('dialog[open],[role="dialog"]:not([hidden])');
     if (control.tagName === 'SUMMARY' && control.parentElement?.tagName === 'DETAILS') (control.parentElement as HTMLDetailsElement).open = true;
     else control.click();
     for (let i = 0; i < 10; i++) {
       await wait(250);
-      if (readTables(doc).length > before) return openedDialog ? () => closeDialog(doc) : () => {};
+      if (readTables(doc).length > before) return close;
     }
   }
+  close();
   return null;
+}
+
+function openDialog(doc: Document): HTMLElement | null {
+  return doc.querySelector<HTMLElement>('dialog[open],[role="dialog"]:not([hidden])');
 }
 
 /** Close a guide dialog FORMA opened, so the shopper is not left with a modal. */
 function closeDialog(doc: Document) {
-  const dialog = doc.querySelector<HTMLDialogElement>('dialog[open]');
-  if (dialog && typeof dialog.close === 'function') { dialog.close(); return; }
-  doc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  const dialog = openDialog(doc);
+  if (!dialog) return;
+  if (dialog.tagName === 'DIALOG' && typeof (dialog as HTMLDialogElement).close === 'function') { (dialog as HTMLDialogElement).close(); return; }
+  // React Aria listens inside the dialog, Headless UI on the document; an
+  // Escape from within the dialog bubbles to both.
+  const active = doc.activeElement;
+  const target = active && active !== doc.body && dialog.contains(active) ? active : dialog;
+  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
 }

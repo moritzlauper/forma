@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { localSizes, type ChartSize } from './charts';
+import { chartFor, localSizes, type ChartSize } from './charts';
 import { sameSize } from '../core/sizes';
 import { BODY_DIMS, DIMS, KINDS, SOURCES, VERDICTS } from '../core/types';
 import type { Judgement, Listing, Measure, Person, Reading, Reference, SizeReading } from '../core/types';
@@ -169,7 +169,7 @@ export function validateReading(raw: unknown, listing: Listing): Omit<Reading, '
 /** Locally parsed chart and seller values are exact; they override the model's numbers. */
 export function mergeLocal(reading: Reading, local: ChartSize[]): Reading {
   const sizes = reading.sizes.map(size => {
-    const parsed = local.find(l => sameSize(l.label, size.label)) || (reading.sizes.length === 1 && local.length === 1 ? local[0] : undefined);
+    const parsed = chartFor(local, size.label) || (reading.sizes.length === 1 && local.length === 1 ? local[0] : undefined);
     if (!parsed) return size;
     const measures = [...parsed.measures, ...size.measures.filter(m => !parsed.measures.some(p => p.dim === m.dim))];
     const body = parsed.body.length ? parsed.body : size.body;
@@ -185,7 +185,7 @@ export function localReading(listing: Listing): Reading {
   const parsed = localSizes(listing);
   const labels = listing.sizes.length ? listing.sizes.map(s => s.label) : parsed.map(p => p.label);
   const sizes: SizeReading[] = labels.map(label => {
-    const p = parsed.find(x => sameSize(x.label, label)) || (labels.length === 1 && parsed.length === 1 ? parsed[0] : undefined);
+    const p = chartFor(parsed, label) || (labels.length === 1 && parsed.length === 1 ? parsed[0] : undefined);
     const offered = listing.sizes.find(s => sameSize(s.label, label));
     return { label, available: offered?.available ?? null, measures: p?.measures || [], body: p?.body || [], width: UNKNOWN, length: UNKNOWN, sleeves: UNKNOWN };
   });

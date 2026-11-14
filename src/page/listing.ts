@@ -309,7 +309,14 @@ function spannedRows(table: Element, cell: (c: Element) => string): string[][] {
       x += across;
     }
   });
-  return grid.map(r => Array.from(r, c => c ?? ''));
+  return withoutRepeatedColumns(grid.map(r => Array.from(r, c => c ?? '')));
+}
+
+/** COS also spans every cell over two columns; identical neighbours are one column. */
+function withoutRepeatedColumns(rows: string[][]): string[][] {
+  const width = Math.max(0, ...rows.map(r => r.length));
+  const keep = Array.from({ length: width }, (_, x) => x === 0 || rows.some(r => (r[x] ?? '') !== (r[x - 1] ?? '')));
+  return rows.map(r => r.filter((_, x) => keep[x]));
 }
 
 export function readTables(doc: Document): Table[] {

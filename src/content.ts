@@ -3,10 +3,10 @@ import { watchRuntimeInvalidation } from './runtime-lifecycle';
 import { createRuntimeMessenger } from './runtime-messaging';
 import { READER_PROTOCOL } from './page-connection';
 import { productIdentity } from './core/identity';
-import { hasMeasureTable, listingSignature, materialSignature, readListing } from './page/listing';
+import { hasMeasureTable, listingSignature, materialSignature, readListing, readTables } from './page/listing';
 import { openSizeGuide } from './page/guide';
 import { createCard } from './page/card';
-import type { Listing, PageState } from './core/types';
+import type { Listing, PageState, Table } from './core/types';
 
 /**
  * Page reader. Reads the product once the page has settled, sends it to the
@@ -25,6 +25,7 @@ import type { Listing, PageState } from './core/types';
   const ANSWER_MS = 110_000;      // after this the chip says that no answer arrived
 
   let disposed = false, enabled = true, manual = false, guideTried = false;
+  let guideTables: Table[] = [];
   let identity = productIdentity(location.href);
   let sent = '', busy = false, queued: { fresh: boolean } | null = null;
   let watchUntil = 0, lastRead = 0, throttle: ReturnType<typeof setTimeout> | undefined;
@@ -86,8 +87,14 @@ import type { Listing, PageState } from './core/types';
       if (relevant(listing) && !listing.marketplace && !hasMeasureTable(listing) && !guideTried) {
         guideTried = true;
         const close = await openSizeGuide(document);
-        if (close) { listing = readListing(document); close(); }
+        // Only the chart is taken from the open guide: its own size picker
+        // ("Grösse auswählen: 27") is not the product's size selection.
+        if (close) { guideTables = readTables(document); close(); }
         if (disposed || own !== generation) return;
+      }
+      // The shop removes the chart when the guide closes; later reads keep it.
+      if (guideTables.length && !hasMeasureTable(listing)) {
+        listing = { ...listing, tables: guideTables, signals: listing.signals.includes('size chart') ? listing.signals : [...listing.signals, 'size chart'] };
       }
       // The first send uses the full, settled listing. After that, only material
       // changes (sizes, availability, charts) justify a new assessment.
@@ -131,7 +138,7 @@ import type { Listing, PageState } from './core/types';
   function restart(fresh = false) {
     generation++;
     identity = productIdentity(location.href);
-    sent = ''; guideTried = false;
+    sent = ''; guideTried = false; guideTables = [];
     void read(fresh, true);
     watch();
   }
@@ -161,7 +168,7 @@ import type { Listing, PageState } from './core/types';
         if (m.force === true) manual = true;
         if (m.force || m.fresh) setDismissed(false);
         reply({ accepted: true, url: location.href });
-        if (m.force || m.fresh || m.retry) { generation++; sent = ''; guideTried = false; void read(true); watch(); }
+        if (m.force || m.fresh || m.retry) { generation++; sent = ''; guideTried = false; guideTables = []; void read(true); watch(); }
         else void read(false);
         return;
       }

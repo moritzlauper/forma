@@ -68,6 +68,18 @@ const shopBody = `<main>
   <div class="related-products"><div class="product-card"><h3>Other hoodie</h3><img src="https://cdn.shop.test/other.jpg" width="400" height="400"></div></div>
 </main>`;
 
+test('Document-level consent state does not hide product sizes and measurements', () => {
+  for (const root of ['html', 'body']) {
+    const doc = page(shopBody + '<div class="cookie-consent"><p>Chest 999 cm</p></div>', 'https://shop.test/products/heavy-box-hoodie', shopHead);
+    doc.querySelector(root)!.classList.add('scrt-consent-open');
+    const listing = readListing(doc);
+    assert.deepEqual(listing.sizes.map(s => [s.label, s.available]), [['S', true], ['M', true], ['L', true], ['XL', false]]);
+    assert.equal(listing.tables.length, 1);
+    assert.ok(listing.facts.some(f => /Model is 185 cm/.test(f)) || /Model is 185 cm/.test(listing.description));
+    assert.ok(!listing.facts.some(f => /999|Runs small/.test(f)), 'the cookie banner and reviews themselves still stay excluded');
+  }
+});
+
 test('A shop page yields sizes, availability, the chart and model facts', () => {
   const l = readListing(page(shopBody, 'https://shop.test/products/heavy-box-hoodie', shopHead));
   assert.equal(l.marketplace, false);

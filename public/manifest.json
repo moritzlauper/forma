@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FORMA \u00b7 Your fit",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Assess clothing fit with size charts, product photos and your preferences. For every gender.",
   "minimum_chrome_version": "120",
   "permissions": [

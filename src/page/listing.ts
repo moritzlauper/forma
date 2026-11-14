@@ -30,7 +30,12 @@ export const clean = (text: string | null | undefined) => (text || '').replace(/
 function within(el: Element, selector: string): boolean {
   try { return !!el.closest(selector); } catch { return false; }
 }
-const ignored = (el: Element) => within(el, SKIP) || within(el, NOISE);
+const ignored = (el: Element) => {
+  // Shops put UI state such as `scrt-consent-open` on html/body. That
+  // describes the page, not a cookie banner containing every product node.
+  const noise = el.closest(NOISE);
+  return within(el, SKIP) || (!!noise && !noise.matches('html,body'));
+};
 
 /** Inside a link to another page: a card for a different product, a category, the seller. */
 function foreignLink(el: Element): boolean {

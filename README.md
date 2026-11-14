@@ -2,7 +2,7 @@
 
 A Chrome extension that tells you which size of a garment fits you, and why. It works on regular clothing shops and on marketplace listings such as Ricardo, Tutti, Vinted or eBay. English interface; profile notes can be English or German. Version 2.0.3.
 
-[Download the latest release](https://github.com/moritzlauper/forma/releases/latest) · [Installation](#install)
+[Download the latest release](https://github.com/moritzlauper/forma/releases/latest) · [Installation](#install) · [Privacy policy / Datenschutz](https://www.angebunden.ch/forma/privacy)
 
 ![FORMA clothing-fit assistant showing a size comparison and an explained estimate](docs/images/forma-teaser.png)
 

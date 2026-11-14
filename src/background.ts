@@ -1,3 +1,4 @@
+import { nativeRequest } from './native';
 import { installReaderStartup } from './reader-startup';
 import { createRequestBudget } from './request-budget';
 import { productIdentity, sha256 } from './core/identity';
@@ -80,6 +81,19 @@ async function personal() {
   };
 }
 
+let assistantWrites: Promise<unknown> = Promise.resolve();
+function queueAssistant(work: () => Promise<unknown>) {
+  const result = assistantWrites.then(work);
+  assistantWrites = result.catch(() => {});
+  return result;
+}
+function syncAssistant(force = false) {
+  return queueAssistant(async () => {
+    if (!force && !(await chrome.storage.local.get('assistantSync')).assistantSync) return;
+    return nativeRequest({ type: 'sync', context: await personal() });
+  });
+}
+
 async function remember(listing: Listing, reading: Reading) {
   const { formaLibrary, scanLibrary } = await chrome.storage.local.get(['formaLibrary', 'scanLibrary']);
   const entry: LibraryEntry = { url: productIdentity(listing.url), name: listing.title, kind: reading.garment.kind, at: Date.now(), image: listing.images[0], sizes: reading.sizes.filter(x => x.measures.length).map(x => ({ label: x.label, measures: x.measures })) };
@@ -113,7 +127,7 @@ async function assess(tab: number, listing: Listing, { manual, fresh }: Options)
     if (!hasPersonalBasis(person, refs)) return done({ status: 'blocked', code: 'profile', message: 'Add your height, usual sizes or a garment that fits you in “Your profile”.' });
     if (mode === 'anthropic' && !key) return done({ status: 'blocked', code: 'key', message: 'Add your Anthropic API key in Settings to start fit assessments.' });
     if (mode === 'ollama' && !model) return done({ status: 'blocked', code: 'key', message: 'Enter the name of your Ollama model in Settings.' });
-    if (!await chrome.permissions.contains({ origins: [mode === 'ollama' ? OLLAMA_ORIGIN : ANTHROPIC_ORIGIN] })) return done({ status: 'blocked', code: 'permission', message: 'Allow the AI connection in Settings. No request has been sent.' });
+    if (!await chrome.permissions.contains(mode === 'codex' || mode === 'claude' ? { permissions: ['nativeMessaging'] } : { origins: [mode === 'ollama' ? OLLAMA_ORIGIN : ANTHROPIC_ORIGIN] })) return done({ status: 'blocked', code: 'permission', message: 'Allow the AI connection in Settings. No request has been sent.' });
 
     const images = mode === 'anthropic' ? listing.images.slice(0, 3) : [];
     const input = readerInput(listing, person, refs, images.length);
@@ -129,7 +143,8 @@ async function assess(tab: number, listing: Listing, { manual, fresh }: Options)
           const controller = new AbortController(); track(controller);
           try {
             let raw: unknown; let used = images.length;
-            if (mode === 'ollama') raw = await readWithOllama(input, model, controller.signal);
+            if (mode === 'codex' || mode === 'claude') raw = await nativeRequest({ type: 'read', provider: mode, input }, controller.signal);
+            else if (mode === 'ollama') raw = await readWithOllama(input, model, controller.signal);
             else {
               try { raw = await readWithAnthropic(input, images, model, key, controller.signal); }
               catch (error) {
@@ -161,7 +176,7 @@ async function assess(tab: number, listing: Listing, { manual, fresh }: Options)
   const decision = decide(listing, reading, person, refs);
   if (!current()) return;
   await remember(listing, reading).catch(() => {});
-  await done({ status: 'ready', reading, decision, model: mode === 'none' ? 'local' : model, cached });
+  await done({ status: 'ready', reading, decision, model: mode === 'none' ? 'local' : model || mode, cached });
 }
 
 /** Profile or feedback changed: recompute every open page locally, without a new AI request. */
@@ -192,6 +207,20 @@ async function retryBlockedPages() {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === 'forma-enabled?') { isEnabled().then(value => reply({ enabled: value })); return true; }
+  if (msg?.type === 'forma-assistant-sync' || msg?.type === 'forma-assistant-disconnect') {
+    if (sender.tab || sender.url !== chrome.runtime.getURL('index.html')) return;
+    (async () => {
+      if (msg.type === 'forma-assistant-disconnect') {
+        await chrome.storage.local.set({ assistantSync: false });
+        await queueAssistant(() => nativeRequest({ type: 'forget' }));
+      } else {
+        await syncAssistant(true);
+        await chrome.storage.local.set({ assistantSync: true });
+      }
+      return { ok: true };
+    })().then(reply).catch(error => reply({ error: error.message }));
+    return true;
+  }
   const tab = sender.tab?.id;
   if (msg?.type === 'listing') {
     if (!tab || (sender.frameId ?? 0) !== 0 || !sender.url) return;
@@ -231,6 +260,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     else startActiveReaders();
     for (const t of await chrome.tabs.query({})) if (t.id) chrome.tabs.sendMessage(t.id, { type: 'forma-enabled', enabled }).catch(() => {});
     return;
+  }
+  if (changes.profile || changes.description || changes.feedback || changes.goodFits || changes.formaLibrary) {
+    if ((await chrome.storage.local.get('assistantSync')).assistantSync) {
+      void syncAssistant().catch(() => {});
+    }
   }
   if (!await isEnabled()) return;
   if (changes.profile || changes.description || changes.feedback || changes.goodFits) void recomputeOpenPages();

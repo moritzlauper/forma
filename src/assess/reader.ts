@@ -5,7 +5,7 @@ import { BODY_DIMS, DIMS, KINDS, SOURCES, VERDICTS } from '../core/types';
 import type { Judgement, Listing, Measure, Person, Reading, Reference, SizeReading } from '../core/types';
 
 /** Bump when prompt or schema change, so cached readings are not reused. */
-export const READER_VERSION = 'reader-2.0.0';
+export const READER_VERSION = 'reader-2.1.0';
 
 export const MODELS = [
   { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 · fast, lowest cost' },
@@ -152,6 +152,7 @@ export function validateReading(raw: unknown, listing: Listing): Omit<Reading, '
     }
     const body = (Array.isArray(s.body) ? s.body : []).filter((b: any) => BODY_DIMS.includes(b?.dim) && Number.isFinite(b.min) && Number.isFinite(b.max) && b.min > 0 && b.max >= b.min && b.max < 260).map((b: any) => ({ dim: b.dim, min: b.min, max: b.max }));
     const offered = listing.sizes.find(o => sameSize(o.label, label));
+    if (listing.sizes.length && !offered) continue;
     sizes.push({ label: offered?.label || label, available: offered ? offered.available : typeof s.available === 'boolean' ? s.available : null, measures, body, width: readJudgement(s.width), length: readJudgement(s.length), sleeves: readJudgement(s.sleeves) });
   }
   const pick = typeof v.pick === 'string' ? sizes.find(s => sameSize(s.label, v.pick))?.label ?? null : null;

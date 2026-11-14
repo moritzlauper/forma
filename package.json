@@ -1,13 +1,14 @@
 {
   "name": "forma-fit",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:companion": "node --test tests/companion-process.test.mjs tests/chrome-store.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

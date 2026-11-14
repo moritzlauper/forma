@@ -10,3 +10,7 @@ await writeFile('dist/manifest.json',JSON.stringify(manifest,null,2)+'\n');
 await copyFile('public/logo.svg','dist/logo.svg');
 await mkdir('dist/icons',{recursive:true});
 for(const size of [16,32,48,128]) await sharp('public/logo.svg').resize(size,size).png().toFile(`dist/icons/icon-${size}.png`);
+await mkdir('companion-dist', { recursive: true });
+await build({ entryPoints: ['companion/core.ts'], bundle: true, outfile: 'companion-dist/core.mjs', platform: 'node', format: 'esm', target: 'node22' });
+for (const file of ['providers.mjs', 'state.mjs', 'native-host.mjs', 'cli.mjs', 'install.mjs']) await copyFile('companion/' + file, 'companion-dist/' + file);
+await copyFile('skills/forma/SKILL.md', 'companion-dist/SKILL.md');

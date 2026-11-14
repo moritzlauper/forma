@@ -1,6 +1,6 @@
 # FORMA · Your fit
 
-A Chrome extension that tells you which size of a garment fits you, and why. It works on regular clothing shops and on marketplace listings such as Ricardo, Tutti, Vinted or eBay. English interface; profile notes can be English or German. Version 2.0.3.
+A Chrome extension that tells you which size of a garment fits you, and why. It works on regular clothing shops and on marketplace listings such as Ricardo, Tutti, Vinted or eBay. English interface; profile notes can be English or German. Version 2.1.0.
 
 [Download the latest release](https://github.com/moritzlauper/forma/releases/latest) · [Installation](#install) · [Privacy policy / Datenschutz](https://www.angebunden.ch/forma/privacy)
 
@@ -13,6 +13,12 @@ A Chrome extension that tells you which size of a garment fits you, and why. It 
 Run `npm ci`, `npm run check`, `npm test` and `npm run build`. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `dist`. After rebuilding, press reload on the FORMA card and refresh open shop tabs. Profiles, saved clothes and the API key from earlier versions are kept.
 
 In the panel, enter your Anthropic API key and choose **Enable FORMA on shop pages**. Chrome asks once for access to websites and to api.anthropic.com. From then on, clothing product pages are checked automatically. **Analyse this page** forces an assessment on a page FORMA did not recognise.
+
+## Ask Codex or Claude to find fits
+
+FORMA 2.1 adds **Codex · ChatGPT login** and **Claude Code · Claude login** as alternatives to an API key. Install the optional [local companion](docs/companion.md), connect your profile in Settings, then ask your assistant: “Use FORMA to find good fits for me.” The current assistant can read products and compute FORMA scores directly, without a separate AI request. Automatic Chrome assessments can instead use your signed-in CLI. Your provider's usage limits apply; CLI modes read text and measurements without product photos.
+
+The companion is optional, currently supports macOS/Linux, and keeps a separate local profile copy only when you connect it. Disconnecting deletes that copy. See the [privacy policy](https://www.angebunden.ch/forma/privacy).
 
 ## How FORMA decides
 
@@ -55,3 +61,5 @@ Sent to the provider: the product page's title, attributes, sizes, description, 
 - `src/background.ts` orchestrates, caches and budgets; `src/panel.tsx` and `src/ui/` are the side panel
 
 `npm test` runs unit tests, including HTML fixtures modelled on a live Ricardo listing and the SCRT size chart. `npm run test:browser` loads the built extension into an isolated Chromium with a simulated AI and checks automatic assessment, cache reuse, one request despite a ticking countdown, local recomputation after feedback and the off switch. Run `npx playwright install chromium` once before. Live AI judgements are not covered by the tests.
+
+Stable GitHub releases are submitted automatically through the [Chrome Web Store release workflow](docs/releases.md) once its publisher service account is connected. Existing reviews are preserved.

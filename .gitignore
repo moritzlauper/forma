@@ -7,3 +7,5 @@ dist/
 env.local
 *.pem
 *.key
+companion-dist/
+*.tar.gz

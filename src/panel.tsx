@@ -1,3 +1,4 @@
+import { nativeRequest } from './native';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { applyProfileUpdate, profileFeedbackUpdate } from './profile-update';
@@ -63,6 +64,7 @@ function App() {
   const [intent, setIntent] = useState<Intent | null>(null);
   const [autoEnabled, setAutoEnabled] = useState(false);
   const [autoMessage, setAutoMessage] = useState('');
+  const [assistantSync, setAssistantSync] = useState(false);
   const [apiAllowed, setApiAllowed] = useState(true);
   const notesWrites = useRef<Promise<void>>(Promise.resolve());
 
@@ -83,6 +85,7 @@ function App() {
         setApiAllowed(await chrome.permissions.contains({ origins: ['https://api.anthropic.com/*'] }));
         setAutoEnabled(await automaticDetectionEnabled().catch(() => false));
       }
+      setAssistantSync(await store.get('assistantSync') === true);
       setReady(true);
     })().catch(() => setNotice('Could not load your saved data. Reload the FORMA panel.'));
   }, []);
@@ -328,7 +331,8 @@ function App() {
 
         {step === 'fit' && <section>
           <div className="bar">01 / YOUR FIT</div>
-          {setupNeeded && <div className="card setup"><h2>Start with your key</h2><p className="small">FORMA uses Claude to read garments and estimate measurements. Your key stays on this device.</p>
+          {setupNeeded && <div className="card setup"><h2>Choose your fit assistant</h2><p className="small">Use your ChatGPT or Claude login through the local companion, or enter an Anthropic API key below.</p>
+            <div className="actions"><button onClick={run(async () => { await saveSettings({ mode: 'codex', model: '' }); setStep('settings'); })}>Use Codex</button><button onClick={run(async () => { await saveSettings({ mode: 'claude', model: '' }); setStep('settings'); })}>Use Claude Code</button></div>
             <label>Anthropic API key<input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} /></label>
             <button className="primary" disabled={!key.trim()} onClick={run(startSetup)}>Enable FORMA on shop pages</button>
             <p className="small">Chrome asks once for access to websites and to api.anthropic.com. Prefer no AI? Choose “No AI” in Settings.</p></div>}
@@ -386,7 +390,7 @@ function App() {
           <div className="bar">03 / SETTINGS</div>
           <h1>Settings.</h1>
           <label>Assessment<select value={mode} onChange={e => void run(() => saveSettings({ mode: e.target.value as Mode, model: e.target.value === 'anthropic' ? DEFAULT_MODEL : e.target.value === 'ollama' ? '' : '' }))()}>
-            <option value="anthropic">Anthropic · my API key</option><option value="ollama">Ollama · this computer</option><option value="none">No AI · compare published measurements only</option>
+            <option value="anthropic">Anthropic · my API key</option><option value="codex">Codex · ChatGPT login</option><option value="claude">Claude Code · Claude login</option><option value="ollama">Ollama · this computer</option><option value="none">No AI · compare published measurements only</option>
           </select></label>
           {mode === 'anthropic' && <>
             <label>Model<select value={model} onChange={e => void run(() => saveSettings({ model: e.target.value }))()}>{MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
@@ -400,7 +404,32 @@ function App() {
           {mode === 'ollama' && <><label>Installed Ollama model<input value={model} onChange={e => setModel(e.target.value)} onBlur={() => void saveSettings({ model })} placeholder="e.g. llama3.2" /></label>
             <p className="small">Start Ollama with OLLAMA_ORIGINS set to this extension's origin. Photos are not sent to local models.</p>
             <button onClick={run(async () => { if (await chrome.permissions.request({ origins: ['http://localhost:11434/*'] })) setNotice('Connection to Ollama allowed.'); })}>Allow connection</button></>}
+          {(mode === 'codex' || mode === 'claude') && <>
+            <p>Use your signed-in {mode === 'codex' ? 'Codex' : 'Claude Code'} on this computer. No API key is needed in FORMA. Your plan’s usage limits apply.</p>
+            <p className="small">Install the FORMA companion from the release, then sign in to the selected CLI. This mode reads text and measurements; product photos are not sent.</p>
+            <a href="https://github.com/moritzlauper/forma/releases/latest" target="_blank" rel="noreferrer">Get the companion</a>
+            <button onClick={run(async () => {
+              if (!await chrome.permissions.request({ permissions: ['nativeMessaging'] })) throw Error('Local connection was not allowed.');
+              const status = await nativeRequest({ type: 'status' });
+              setNotice(status[mode] ? 'Companion connected. Your CLI login will be used on the next assessment.' : 'Companion connected. Install and sign in to the selected CLI first.');
+            })}>Connect local assistant</button>
+          </>}
           {mode === 'none' && <p className="small">FORMA compares published measurements and seller measurements with your clothes and body measurements. Without AI, pages without measurements cannot be judged.</p>}
+
+          <h2>Find fits from your assistant</h2>
+          <p className="small">Share your fit profile, notes and saved clothes with the local FORMA companion so Codex or Claude Code can compare products for you. No API key or profile label is exported. This keeps a copy on this computer, available to your local assistants.</p>
+          <button onClick={run(async () => {
+            if (!await chrome.permissions.request({ permissions: ['nativeMessaging'] })) throw Error('Local connection was not allowed.');
+            const result = await chrome.runtime.sendMessage({ type: 'forma-assistant-sync' });
+            if (!result?.ok) throw Error(result?.error || 'The profile could not be connected. Reload FORMA and try again.');
+            setAssistantSync(true); setNotice('Connected. Ask Codex or Claude Code: Use FORMA to find good fits for me.');
+          })}>{assistantSync ? 'Sync profile again' : 'Connect my fit profile'}</button>
+          {assistantSync && <button onClick={run(async () => {
+            const result = await chrome.runtime.sendMessage({ type: 'forma-assistant-disconnect' });
+            setAssistantSync(false);
+            if (result?.error) throw Error('Sync stopped. The companion could not delete its copy; run forma forget locally.');
+            setNotice('Assistant sync stopped and the companion copy deleted.');
+          })}>Disconnect and delete local copy</button>}
 
           <h2>Shops</h2>
           <button disabled={autoEnabled} onClick={async () => { setAutoMessage('Waiting for Chrome…'); try { await enableAutomaticDetection(chrome, async () => { await connect({}).catch(() => {}); }); setAutoEnabled(true); setAutoMessage('Active on all shops.'); } catch (e) { setAutoMessage(e instanceof Error ? e.message : 'Could not enable.'); } }}>{autoEnabled ? '✓ Automatic on all shops' : 'Enable on all shops'}</button>

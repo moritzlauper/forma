@@ -6,6 +6,9 @@ on:
   schedule:
     # Picks up the latest release after a previous Google review completes.
     - cron: '23 7 * * *'
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 concurrency:
